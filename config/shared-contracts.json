@@ -1,0 +1,24 @@
+{
+  "$schema": "./shared-contracts.schema.json",
+  "version": 1,
+  "entries": [
+    {
+      "id": "sum-all",
+      "name": "Sum of all cards",
+      "description": "Settles to the sum of every card in play.",
+      "payoffSource": "  return H.sum(cards);"
+    },
+    {
+      "id": "ten-times-evens",
+      "name": "10 × number of even cards",
+      "description": "Settles to ten times the count of even cards in play.",
+      "payoffSource": "  return 10 * H.count(cards, function (c) { return c % 2 === 0; });"
+    },
+    {
+      "id": "evens-minus-odds",
+      "name": "Sum of evens minus sum of odds",
+      "description": "Settles to (sum of even cards in play) minus (sum of odd cards in play).",
+      "payoffSource": "  return H.sumWhere(cards, function (c) { return c % 2 === 0; }) - H.sumWhere(cards, function (c) { return c % 2 === 1; });"
+    }
+  ]
+}

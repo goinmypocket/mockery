@@ -1,0 +1,303 @@
+/* =============================================================================
+   Mockery global styles. Single dark theme. Naming convention: `mk-*`.
+   v0.1; will be overhauled when rc-dock is integrated.
+   ============================================================================= */
+
+:root {
+  --mk-bg: #0e1116;
+  --mk-panel: #161b22;
+  --mk-panel-2: #1f242c;
+  --mk-border: #30363d;
+  --mk-text: #e6e6e6;
+  --mk-muted: #8b949e;
+  --mk-bid: #79c0ff;
+  --mk-offer: #ff7b72;
+  --mk-pos: #e6e6e6;
+  --mk-neg: #ff7b72;
+  --mk-accent: #f0883e;
+  --mk-success: #56d364;
+  --mk-warn: #d29922;
+}
+
+/* ------ buttons ------ */
+.mk-button {
+  background: var(--mk-panel-2);
+  color: var(--mk-text);
+  border: 1px solid var(--mk-border);
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+.mk-button:hover { background: #283038; }
+.mk-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.mk-button--primary { background: var(--mk-accent); border-color: var(--mk-accent); color: #11140d; font-weight: 600; }
+.mk-button--primary:hover { background: #f59e4a; }
+.mk-button--large { padding: 10px 18px; font-size: 1.05em; }
+.mk-button--small { padding: 2px 8px; font-size: 0.9em; }
+.mk-button--danger { background: #5a1f1f; border-color: #7a2f2f; color: #ffaaaa; }
+.mk-button--danger:hover { background: #7a2f2f; }
+
+/* ------ general atoms ------ */
+.mk-muted { color: var(--mk-muted); font-size: 0.9em; }
+.mk-num { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-align: right; }
+.mk-code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 600; }
+.mk-bid { color: var(--mk-bid); }
+.mk-offer { color: var(--mk-offer); }
+.mk-neg { color: var(--mk-neg); }
+
+.mk-table { border: 1px solid var(--mk-border); border-radius: 4px; overflow: hidden; }
+.mk-table th, .mk-table td { padding: 6px 10px; border-bottom: 1px solid var(--mk-border); text-align: left; }
+.mk-table th { background: var(--mk-panel-2); color: var(--mk-muted); font-weight: 500; font-size: 0.9em; }
+.mk-table tr:last-child td { border-bottom: none; }
+
+.mk-checkbox { display: inline-flex; align-items: center; gap: 6px; color: var(--mk-muted); }
+.mk-field { display: block; margin-bottom: 12px; }
+.mk-field span { display: block; color: var(--mk-muted); font-size: 0.9em; margin-bottom: 4px; }
+.mk-field input, .mk-field textarea {
+  width: 100%; background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+.mk-field textarea { resize: vertical; min-height: 120px; }
+
+/* ------ rejection chip ------ */
+.mk-rejection {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #5a1f1f; color: #ffaaaa; border: 1px solid #7a2f2f;
+  padding: 6px 12px; border-radius: 999px; font-size: 0.9em;
+}
+.mk-rejection:hover { background: #7a2f2f; }
+
+/* ------ loading ------ */
+.mk-loading { display: grid; place-items: center; height: 100%; color: var(--mk-muted); }
+
+/* ------ setup screen ------ */
+.mk-setup { max-width: 1100px; margin: 0 auto; padding: 24px 32px; }
+.mk-setup__header { margin-bottom: 24px; }
+.mk-setup__header h1 { margin: 0 0 4px 0; font-size: 1.5em; }
+.mk-setup__subtitle { color: var(--mk-muted); margin: 0; }
+.mk-setup__section {
+  background: var(--mk-panel);
+  border: 1px solid var(--mk-border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.mk-setup__section h2 { margin: 0 0 12px 0; font-size: 1.1em; }
+.mk-setup__footer { display: flex; align-items: center; gap: 16px; margin-top: 20px; }
+.mk-setup__hint { color: var(--mk-warn); margin: 0; }
+.mk-setup__contracts { padding-left: 20px; color: var(--mk-muted); }
+
+.mk-mode-picker { display: flex; gap: 16px; margin-bottom: 12px; }
+.mk-mode-picker label { color: var(--mk-text); }
+
+/* ------ contracts editor ------ */
+.mk-contracts {
+  display: grid; grid-template-columns: 1fr 2fr; gap: 16px;
+}
+.mk-contracts h4 { margin: 0 0 8px 0; }
+.mk-contracts__shared-row { display: flex; flex-direction: column; gap: 8px; }
+.mk-contracts__list { list-style: none; padding: 0; margin: 0 0 12px 0; }
+.mk-contracts__item {
+  background: var(--mk-panel-2); padding: 10px 12px; border-radius: 4px;
+  display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;
+}
+.mk-contracts__item p { margin: 0; }
+.mk-contracts__actions { display: flex; gap: 8px; }
+
+/* ------ modal ------ */
+.mk-modal {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid; place-items: center;
+  z-index: 100;
+}
+.mk-modal__panel {
+  background: var(--mk-panel); border: 1px solid var(--mk-border);
+  border-radius: 8px; padding: 20px; max-width: 600px; width: 90%;
+}
+.mk-modal__panel h3 { margin-top: 0; }
+.mk-modal__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+/* ------ event queue ------ */
+.mk-queue__list { list-style: none; padding: 0; margin: 0 0 12px 0; }
+.mk-queue__item {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--mk-panel-2); padding: 6px 10px; margin-bottom: 4px;
+  border-radius: 4px;
+}
+.mk-queue__pos { color: var(--mk-muted); width: 28px; text-align: center; }
+.mk-queue__type { flex: 1; font-weight: 500; }
+.mk-queue__actions { display: flex; gap: 4px; }
+.mk-queue__add { display: flex; gap: 8px; align-items: center; }
+
+/* ------ bots editor ------ */
+.mk-bots__add { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.mk-bots__add input {
+  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 6px 8px; border-radius: 4px; width: 80px;
+  text-transform: uppercase; font-family: ui-monospace, monospace;
+}
+
+/* ------ codes editor ------ */
+.mk-codes__topline { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.mk-codes__topline p { margin: 0; }
+.mk-code-input {
+  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 4px 6px; border-radius: 4px; width: 50px;
+  font-family: ui-monospace, monospace; text-align: center;
+}
+.mk-code-input--invalid { border-color: var(--mk-offer); }
+
+/* ------ identity reveal ------ */
+.mk-identity__radios { display: flex; gap: 16px; }
+
+/* ------ playing screen ------ */
+.mk-playing { display: flex; flex-direction: column; height: 100%; }
+.mk-playing__rejection { padding: 4px 12px; }
+.mk-playing__grid {
+  flex: 1; display: grid; gap: 8px; padding: 8px;
+  grid-template-columns: 280px 1fr 360px;
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    "cards book positions"
+    "cards tns positions"
+    "myorders tns host";
+  overflow: hidden;
+}
+.mk-panel {
+  background: var(--mk-panel); border: 1px solid var(--mk-border);
+  border-radius: 8px; padding: 12px; overflow: auto;
+}
+.mk-panel__title {
+  margin: 0 0 8px 0; font-size: 0.9em; color: var(--mk-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.mk-panel--cards { grid-area: cards; }
+.mk-panel--book { grid-area: book; }
+.mk-panel--tns { grid-area: tns; }
+.mk-panel--positions { grid-area: positions; }
+.mk-panel--my-orders { grid-area: myorders; }
+.mk-panel--host { grid-area: host; }
+.mk-playing__placer {
+  border-top: 1px solid var(--mk-border);
+  background: var(--mk-panel);
+  padding: 12px;
+}
+
+/* ------ topbar ------ */
+.mk-topbar {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--mk-panel); border-bottom: 1px solid var(--mk-border);
+  padding: 8px 16px;
+}
+.mk-topbar__title { font-weight: 700; font-size: 1.1em; }
+.mk-topbar__phase {
+  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  border-radius: 999px; padding: 2px 10px; font-family: ui-monospace, monospace;
+}
+.mk-topbar__countdown {
+  font-family: ui-monospace, monospace; font-size: 1.6em; font-weight: 600;
+}
+.mk-topbar__next { color: var(--mk-muted); }
+
+/* ------ card display ------ */
+.mk-cards-display { display: flex; flex-direction: column; gap: 16px; }
+.mk-cards-display h4 { margin: 0 0 8px 0; color: var(--mk-muted); font-size: 0.9em; }
+.mk-cards-display__row { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.mk-card {
+  background: var(--mk-panel-2); border: 2px solid var(--mk-border);
+  border-radius: 6px; width: 56px; height: 80px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  position: relative;
+}
+.mk-card__face { font-size: 1.6em; font-family: ui-monospace, monospace; }
+.mk-card__label { font-size: 0.7em; color: var(--mk-muted); position: absolute; bottom: 4px; }
+.mk-card--mine { border-color: var(--mk-accent); }
+.mk-card--revealed { border-color: var(--mk-success); }
+.mk-card--empty { opacity: 0.4; }
+
+/* ------ order book ------ */
+.mk-book { display: flex; flex-direction: column; gap: 4px; }
+.mk-book__row { background: var(--mk-panel-2); border-radius: 4px; }
+.mk-book__line {
+  display: flex; align-items: center; gap: 4px; padding: 6px;
+}
+.mk-book__hit {
+  background: var(--mk-panel); color: var(--mk-text);
+  border: 1px solid var(--mk-border); padding: 4px 8px; border-radius: 3px;
+  font-size: 0.85em;
+}
+.mk-book__hit:hover { background: #283038; }
+.mk-book__qty {
+  width: 40px; background: var(--mk-bg); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 2px 4px; border-radius: 3px; text-align: center;
+  font-family: ui-monospace, monospace;
+}
+.mk-book__side {
+  flex: 1; background: transparent; border: 1px solid transparent;
+  color: var(--mk-text); padding: 4px 8px; border-radius: 3px; text-align: left;
+}
+.mk-book__side:hover { border-color: var(--mk-border); }
+.mk-book__side--bid { text-align: right; }
+.mk-book__side--offer { text-align: left; }
+.mk-book__contract {
+  background: var(--mk-panel); color: var(--mk-text); border: 1px solid var(--mk-border);
+  padding: 4px 12px; border-radius: 4px; font-weight: 600;
+}
+.mk-book__contract:hover { background: #283038; }
+.mk-book__expanded { margin-top: 4px; font-size: 0.9em; }
+.mk-book__expanded td { cursor: pointer; }
+
+/* ------ order placer ------ */
+.mk-placer {
+  display: flex; align-items: center; gap: 8px;
+}
+.mk-placer select, .mk-placer input {
+  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+.mk-placer__price, .mk-placer__qty { width: 90px; }
+.mk-placer__seg { display: flex; gap: 0; }
+.mk-placer__seg .mk-button { border-radius: 0; }
+.mk-placer__seg .mk-button:first-child { border-radius: 4px 0 0 4px; }
+.mk-placer__seg .mk-button:last-child { border-radius: 0 4px 4px 0; }
+
+/* ------ tns ------ */
+.mk-tns__filters { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.mk-tns__filters select {
+  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 4px 8px; border-radius: 4px;
+}
+.mk-tns__row td { padding: 4px 10px; font-size: 0.9em; }
+.mk-tns__phase { color: var(--mk-muted); width: 30px; text-align: center; }
+.mk-tns__buyer { color: var(--mk-bid); }
+.mk-tns__seller { color: var(--mk-offer); }
+.mk-tns__aggressor { font-weight: 700; }
+.mk-phase-0 { background: #161b22; }
+.mk-phase-1 { background: #1a2030; }
+.mk-phase-2 { background: #1c2520; }
+.mk-phase-3 { background: #251c20; }
+.mk-phase-4 { background: #1f1c25; }
+.mk-phase-5 { background: #25201c; }
+
+/* ------ host controls ------ */
+.mk-host { display: flex; flex-direction: column; gap: 12px; }
+.mk-host__auto, .mk-host__manual { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mk-host__delay-input, .mk-host__grace-input {
+  width: 80px; background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+.mk-host__end { display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--mk-panel-2); border-radius: 4px; }
+.mk-host__grace-row { display: flex; gap: 6px; align-items: center; }
+
+/* ------ finished screen ------ */
+.mk-finished { max-width: 800px; margin: 0 auto; padding: 24px 32px; }
+.mk-finished h1 { margin: 0 0 16px 0; }
+.mk-finished h2 { margin: 24px 0 12px 0; font-size: 1.1em; }
+.mk-finished__cards { list-style: none; padding: 0; display: flex; gap: 8px; }
+.mk-finished__cards li {
+  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  border-radius: 4px; padding: 8px 16px;
+}
