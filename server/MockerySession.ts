@@ -75,6 +75,7 @@ import {
 import { project, type ProjectedSnapshot } from "../engine/project";
 import { randomInt } from "../engine/rng";
 import { realClock, type SessionClock, type TimerHandle } from "./clock";
+import { getLibrary, type ContractLibrary } from "./db/library";
 import { readResolved } from "./options";
 
 /** Wider result type for `submitBotIntent` — the action API on
@@ -117,6 +118,10 @@ export interface SessionConstructorArgs {
   readonly hostUserId: UserId;
   readonly options: ResolvedOptions;
   readonly clock?: SessionClock;
+  /** Override the user-contract-library implementation. Tests inject an
+   *  in-memory variant; production uses the singleton from
+   *  `./db/library.ts`. */
+  readonly library?: ContractLibrary;
 }
 
 export function createFromOpts(opts: CreateOpts): MockerySession {
@@ -168,9 +173,15 @@ export class MockerySession implements GameSession<MockerySave> {
    *  `broadcastSnapshot`. Hooks must not throw. */
   private hooks: SessionHooks = {};
 
+  /** Per-user contract library. Lazy: opened on first LIBRARY_* intent
+   *  rather than at session construction so tests that don't touch the
+   *  library don't pay the SQLite cost. */
+  private libraryImpl: ContractLibrary | null;
+
   constructor(args: SessionConstructorArgs) {
     this.tableId = args.tableId;
     this.clock = args.clock ?? realClock;
+    this.libraryImpl = args.library ?? null;
     const totalSeats = args.options.informedSeats + args.options.uninformedSeats;
     this.state = createInitialState({
       options: args.options,
@@ -180,6 +191,11 @@ export class MockerySession implements GameSession<MockerySave> {
     });
     this.seatDisplayNames = new Array<string | null>(totalSeats).fill(null);
     this.lastActivityAt = this.clock.now();
+  }
+
+  private library(): ContractLibrary {
+    if (!this.libraryImpl) this.libraryImpl = getLibrary();
+    return this.libraryImpl;
   }
 
   // -------------------------------------------------------------------
@@ -333,6 +349,12 @@ export class MockerySession implements GameSession<MockerySave> {
         case "END_GAME":                   return this.onEndGame(userId);
         case "START_GRACE_TIMER":          return this.onStartGraceTimer(userId, msg);
         case "CANCEL_GRACE_TIMER":         return this.onCancelGraceTimer(userId);
+
+        // Per-user contract library (any phase, any participant).
+        case "LIBRARY_LIST":               return this.onLibraryList(userId);
+        case "LIBRARY_SAVE":               return this.onLibrarySave(userId, msg);
+        case "LIBRARY_UPDATE":             return this.onLibraryUpdate(userId, msg);
+        case "LIBRARY_DELETE":             return this.onLibraryDelete(userId, msg);
 
         default:
           return this.reject(userId, payload, `unknown intent ${kind}`);
@@ -665,6 +687,81 @@ export class MockerySession implements GameSession<MockerySave> {
   private afterTrades(trades: readonly Trade[]): void {
     if (trades.length > 0) this.hooks.onTrades?.(trades);
     this.hooks.onMarketChanged?.();
+  }
+
+  // -------------------------------------------------------------------
+  // Per-user contract library (LIBRARY_*)
+  // -------------------------------------------------------------------
+
+  private onLibraryList(userId: UserId): void {
+    const send = this.connections.get(userId);
+    if (!send) return;
+    try {
+      const entries = this.library().list(userId);
+      send({ type: "LIBRARY_LIST_RESULT", entries });
+    } catch (err) {
+      this.reject(userId, "LIBRARY_LIST", (err as Error).message);
+    }
+  }
+
+  private onLibrarySave(userId: UserId, msg: Record<string, unknown>): void {
+    const name = String(msg["name"] ?? "").trim();
+    const description = String(msg["description"] ?? "");
+    const payoffSource = String(msg["payoffSource"] ?? "");
+    if (!name) return this.reject(userId, msg, "name required");
+    const v = validatePayoffSource(payoffSource);
+    if (!v.ok) return this.reject(userId, msg, v.reason ?? "invalid payoff");
+    try {
+      const entry = this.library().save(userId, { name, description, payoffSource });
+      const send = this.connections.get(userId);
+      if (send) {
+        send({ type: "LIBRARY_SAVE_RESULT", entry });
+        send({ type: "LIBRARY_LIST_RESULT", entries: this.library().list(userId) });
+      }
+    } catch (err) {
+      this.reject(userId, msg, (err as Error).message);
+    }
+  }
+
+  private onLibraryUpdate(userId: UserId, msg: Record<string, unknown>): void {
+    const id = Number(msg["id"]);
+    if (!Number.isInteger(id) || id <= 0) return this.reject(userId, msg, "invalid id");
+    const args: { name?: string; description?: string; payoffSource?: string } = {};
+    if (typeof msg["name"] === "string") args.name = msg["name"] as string;
+    if (typeof msg["description"] === "string") args.description = msg["description"] as string;
+    if (typeof msg["payoffSource"] === "string") {
+      const src = msg["payoffSource"] as string;
+      const v = validatePayoffSource(src);
+      if (!v.ok) return this.reject(userId, msg, v.reason ?? "invalid payoff");
+      args.payoffSource = src;
+    }
+    try {
+      const entry = this.library().update(userId, id, args);
+      if (!entry) return this.reject(userId, msg, "not found");
+      const send = this.connections.get(userId);
+      if (send) {
+        send({ type: "LIBRARY_UPDATE_RESULT", entry });
+        send({ type: "LIBRARY_LIST_RESULT", entries: this.library().list(userId) });
+      }
+    } catch (err) {
+      this.reject(userId, msg, (err as Error).message);
+    }
+  }
+
+  private onLibraryDelete(userId: UserId, msg: Record<string, unknown>): void {
+    const id = Number(msg["id"]);
+    if (!Number.isInteger(id) || id <= 0) return this.reject(userId, msg, "invalid id");
+    try {
+      const ok = this.library().remove(userId, id);
+      if (!ok) return this.reject(userId, msg, "not found");
+      const send = this.connections.get(userId);
+      if (send) {
+        send({ type: "LIBRARY_DELETE_RESULT", id });
+        send({ type: "LIBRARY_LIST_RESULT", entries: this.library().list(userId) });
+      }
+    } catch (err) {
+      this.reject(userId, msg, (err as Error).message);
+    }
   }
 
   // -------------------------------------------------------------------

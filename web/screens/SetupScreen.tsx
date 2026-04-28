@@ -5,6 +5,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import type { ProjectedSnapshot } from "../../engine/project";
+import type { LibraryEntryView } from "../useMockerySession";
 import { ContractsEditor } from "../setup/ContractsEditor";
 import { EventQueueEditor } from "../setup/EventQueueEditor";
 import { BotEntitiesEditor } from "../setup/BotEntitiesEditor";
@@ -15,20 +16,21 @@ import { RejectionChip } from "../components/RejectionChip";
 interface Props {
   readonly snapshot: ProjectedSnapshot;
   send(msg: unknown): void;
+  readonly library: readonly LibraryEntryView[] | null;
   readonly lastRejection: string | null;
   clearRejection(): void;
 }
 
 export function SetupScreen(props: Props): ReactNode {
-  const { snapshot, send, lastRejection, clearRejection } = props;
+  const { snapshot, send, library, lastRejection, clearRejection } = props;
   const isHost = snapshot.viewer.userId === snapshot.tableHostUserId;
 
   if (!isHost) return <NonHostSetup snapshot={snapshot} />;
-  return <HostSetup snapshot={snapshot} send={send} lastRejection={lastRejection} clearRejection={clearRejection} />;
+  return <HostSetup snapshot={snapshot} send={send} library={library} lastRejection={lastRejection} clearRejection={clearRejection} />;
 }
 
 function HostSetup({
-  snapshot, send, lastRejection, clearRejection,
+  snapshot, send, library, lastRejection, clearRejection,
 }: Props): ReactNode {
   const opts = snapshot.options;
   const ready =
@@ -50,7 +52,7 @@ function HostSetup({
 
       <section className="mk-setup__section">
         <h2>Contracts</h2>
-        <ContractsEditor snapshot={snapshot} send={send} />
+        <ContractsEditor snapshot={snapshot} send={send} library={library} />
       </section>
 
       <section className="mk-setup__section">

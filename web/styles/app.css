@@ -92,7 +92,7 @@
 
 /* ------ contracts editor ------ */
 .mk-contracts {
-  display: grid; grid-template-columns: 1fr 2fr; gap: 16px;
+  display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 16px;
 }
 .mk-contracts h4 { margin: 0 0 8px 0; }
 .mk-contracts__shared-row { display: flex; flex-direction: column; gap: 8px; }

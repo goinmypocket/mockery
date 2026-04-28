@@ -42,6 +42,7 @@ export default function PlatformApp({ ctx }: Props): ReactNode {
       <SetupScreen
         snapshot={session.snapshot}
         send={session.send}
+        library={session.library}
         lastRejection={session.lastRejection}
         clearRejection={session.clearRejection}
       />
