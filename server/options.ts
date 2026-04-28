@@ -12,6 +12,10 @@ import type {
   ResolvedOptions,
 } from "../shared/types";
 
+/** Upper bound on `informedSeats + uninformedSeats`. Must match
+ *  `definition.ts`'s `maxPlayers`. */
+export const MAX_SEAT_COUNT = 8;
+
 export function normalizeMockeryOptions(
   raw: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -39,6 +43,9 @@ export function normalizeMockeryOptions(
   // Cross-field checks
   if (informedSeats + uninformedSeats < 2) {
     throw new Error("informedSeats + uninformedSeats must be >= 2");
+  }
+  if (informedSeats + uninformedSeats > MAX_SEAT_COUNT) {
+    throw new Error(`informedSeats + uninformedSeats must be <= ${MAX_SEAT_COUNT}`);
   }
   if (eventIntervalMin > eventIntervalMax) {
     throw new Error("eventIntervalMin must be <= eventIntervalMax");

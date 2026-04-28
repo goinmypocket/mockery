@@ -15,11 +15,13 @@ import { normalizeMockeryOptions } from "./server/options";
 export const def: GameDefinition<MockerySave> = {
   id: asGameId("mockery"),
   displayName: "Mockery",
-  // Default scenario: 6 informed + 0 uninformed. The platform's
-  // current seam treats min/max as fixed counts; we expose those
-  // derived from informedSeats + uninformedSeats. See game-spec §10.1.
-  minPlayers: 6,
-  maxPlayers: 6,
+  // The platform reads min/max once at registration, so they're a
+  // static range. The session enforces the *exact* options-driven
+  // headcount (`informedSeats + uninformedSeats`) at START_TRADING.
+  // The lobby may briefly show empty seats beyond the chosen
+  // headcount; they're ignored.
+  minPlayers: 2,
+  maxPlayers: 8,
   supportsSpectators: true,
   optionsSchema: [
     { kind: "number",  key: "informedSeats",     label: "Informed seats",      default: 6,  min: 1, max: 26 },

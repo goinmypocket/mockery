@@ -76,7 +76,7 @@ import { project, type ProjectedSnapshot } from "../engine/project";
 import { randomInt } from "../engine/rng";
 import { realClock, type SessionClock, type TimerHandle } from "./clock";
 import { getLibrary, type ContractLibrary } from "./db/library";
-import { readResolved } from "./options";
+import { MAX_SEAT_COUNT, readResolved } from "./options";
 
 /** Wider result type for `submitBotIntent` — the action API on
  *  `BotContext` needs the resident order id and fill list. */
@@ -182,14 +182,18 @@ export class MockerySession implements GameSession<MockerySave> {
     this.tableId = args.tableId;
     this.clock = args.clock ?? realClock;
     this.libraryImpl = args.library ?? null;
-    const totalSeats = args.options.informedSeats + args.options.uninformedSeats;
+    // Always allocate MAX_SEAT_COUNT slots so the platform's lobby UI
+    // (which reads `def.maxPlayers`) and our seat array agree on
+    // bounds. Only the first `informedSeats + uninformedSeats` need
+    // to be filled; the rest stay null and are validated empty at
+    // START_TRADING.
     this.state = createInitialState({
       options: args.options,
       hostUserId: args.hostUserId,
-      seats: new Array<UserId | null>(totalSeats).fill(null),
+      seats: new Array<UserId | null>(MAX_SEAT_COUNT).fill(null),
       now: this.clock.now(),
     });
-    this.seatDisplayNames = new Array<string | null>(totalSeats).fill(null);
+    this.seatDisplayNames = new Array<string | null>(MAX_SEAT_COUNT).fill(null);
     this.lastActivityAt = this.clock.now();
   }
 
@@ -223,7 +227,8 @@ export class MockerySession implements GameSession<MockerySave> {
 
   claimSeat(userId: UserId, seatIndex: number, options?: SeatOptions): Result {
     if (!this.inPlatformLobby) return { ok: false, reason: "game already started" };
-    if (seatIndex < 0 || seatIndex >= this.state.seats.length) {
+    const required = this.state.options.informedSeats + this.state.options.uninformedSeats;
+    if (seatIndex < 0 || seatIndex >= required) {
       return { ok: false, reason: "seat index out of range" };
     }
     const seats = this.state.seats;
@@ -277,18 +282,31 @@ export class MockerySession implements GameSession<MockerySave> {
   }
 
   /** Lobby → setup transition. Generates initial code book and seeds
-   *  display names. The host configures the rest in setup. */
+   *  display names. The host configures the rest in setup.
+   *
+   *  Headcount rule: exactly `informedSeats + uninformedSeats` players
+   *  must be claimed, and they must occupy the first N seat indices.
+   *  Trailing slots stay null (the platform's lobby may show extra
+   *  empty rows that simply aren't used). */
   startGame(callerUserId: UserId): Result {
     if (callerUserId !== this.state.hostUserId) {
       return { ok: false, reason: "only the host may start" };
     }
     if (!this.inPlatformLobby) return { ok: false, reason: "already started" };
-    if (this.state.seats.some((s) => s === null)) {
-      return { ok: false, reason: "all seats must be filled" };
+    const required = this.state.options.informedSeats + this.state.options.uninformedSeats;
+    for (let i = 0; i < required; i++) {
+      if (this.state.seats[i] === null) {
+        return { ok: false, reason: `seat ${i + 1} must be filled (${required} players needed)` };
+      }
+    }
+    for (let i = required; i < this.state.seats.length; i++) {
+      if (this.state.seats[i] !== null) {
+        return { ok: false, reason: `seat ${i + 1} is past the player count (${required})` };
+      }
     }
 
     // Capture display names into the engine's per-participant map.
-    for (let i = 0; i < this.state.seats.length; i++) {
+    for (let i = 0; i < required; i++) {
       const u = this.state.seats[i]!;
       const name = this.seatDisplayNames[i] ?? `Seat ${i + 1}`;
       this.state.displayNames[participantKey({ kind: "player", userId: u })] = name;
@@ -1082,6 +1100,7 @@ export class MockerySession implements GameSession<MockerySave> {
   }
 
   describe(): SessionDescription {
+    const required = this.state.options.informedSeats + this.state.options.uninformedSeats;
     return {
       status: this.inPlatformLobby
         ? "lobby"
@@ -1089,10 +1108,10 @@ export class MockerySession implements GameSession<MockerySave> {
           ? "finished"
           : "playing",
       playerCount: this.state.seats.filter((s) => s !== null).length,
-      maxPlayers: this.state.seats.length,
+      maxPlayers: required,
       spectatorCount: this.spectators.size,
       lastActivityAt: this.lastActivityAt,
-      playableSeatIndices: this.state.seats.map((_, i) => i),
+      playableSeatIndices: Array.from({ length: required }, (_, i) => i),
     };
   }
 

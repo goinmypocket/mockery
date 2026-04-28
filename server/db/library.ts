@@ -37,6 +37,7 @@ export interface ContractLibrary {
 }
 
 let cached: ContractLibrary | null = null;
+let cachedDb: Database | null = null;
 
 /** Singleton accessor. The first call opens (or creates) the DB; later
  *  calls reuse it. Tests can override by passing `forceMemory`. */
@@ -119,12 +120,30 @@ export function getLibrary(opts?: { forceMemory?: boolean }): ContractLibrary {
     },
   };
 
-  if (!opts?.forceMemory) cached = lib;
+  if (!opts?.forceMemory) {
+    cached = lib;
+    cachedDb = db;
+  }
   return lib;
 }
 
 /** Test-only: drop the cached singleton so the next getLibrary opens fresh. */
 export function resetLibraryForTesting(): void {
+  if (cachedDb) {
+    try { cachedDb.close(); } catch { /* ignore */ }
+    cachedDb = null;
+  }
+  cached = null;
+}
+
+/** Close the singleton DB connection. Used by integration tests
+ *  before tearing down their tmpdir on Windows (where open file
+ *  handles block rmdir). */
+export function closeLibrary(): void {
+  if (cachedDb) {
+    try { cachedDb.close(); } catch { /* ignore */ }
+    cachedDb = null;
+  }
   cached = null;
 }
 
