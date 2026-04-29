@@ -11,9 +11,25 @@ import {
 } from "pure-rand";
 
 export type Rng = RandomGenerator;
+/** Snapshot of the generator's internal state — round-trips via JSON. */
+export type RngState = number[];
 
 export function makeRng(seed: number): Rng {
   return xoroshiro128plus(seed);
+}
+
+/** Capture the generator's current state so it can be JSON-serialised. */
+export function getRngState(rng: Rng): RngState {
+  // pure-rand's RandomGenerator interface includes getState() at runtime;
+  // it isn't on the public TS surface, so we cast.
+  const state = (rng as unknown as { getState?: () => number[] }).getState?.();
+  if (!state) throw new Error("rng does not expose getState");
+  return state.slice();
+}
+
+/** Reconstitute a generator from a state captured by `getRngState`. */
+export function rngFromState(state: RngState): Rng {
+  return xoroshiro128plus.fromState(state);
 }
 
 export function shuffle<T>(arr: readonly T[], rng: Rng): T[] {

@@ -48,8 +48,11 @@ import {
   type EventMode,
   type EventQueueEntry,
   type IdentityReveal,
+  type Order,
+  type OrderBook,
   type OrderSide,
   type ParticipantId,
+  type PriceLevel,
   type ResolvedOptions,
   type Trade,
 } from "../shared/types";
@@ -73,7 +76,7 @@ import {
   type ParticipantInfo,
 } from "../engine";
 import { project, type ProjectedSnapshot } from "../engine/project";
-import { randomInt } from "../engine/rng";
+import { getRngState, randomInt, rngFromState } from "../engine/rng";
 import { realClock, type SessionClock, type TimerHandle } from "./clock";
 import { getLibrary, type ContractLibrary } from "./db/library";
 import { MAX_SEAT_COUNT, readResolved } from "./options";
@@ -103,14 +106,62 @@ const SHARED_CONTRACTS_PATH = new URL("../config/shared-contracts.json", import.
 // ---------------------------------------------------------------------------
 
 export interface MockerySave {
-  readonly version: 1;
+  readonly version: 2;
   readonly options: ResolvedOptions;
   readonly hostUserId: UserId;
   readonly seats: ReadonlyArray<UserId | null>;
   readonly seatDisplayNames: ReadonlyArray<string | null>;
   readonly status: "lobby" | "setup" | "playing" | "finished";
-  // TODO(persistence): full state snapshot incl. rng, books, trades,
-  //   positions, cash, codeBook, contracts, eventQueue, public cards.
+
+  // Full engine snapshot (only meaningful when status !== "lobby"):
+  readonly rngState?: readonly number[];
+  readonly informedCards?: readonly number[];
+  readonly publicCards?: readonly number[];
+  readonly publicRevealed?: readonly boolean[];
+  readonly phase?: number;
+  readonly startedAt?: number;
+  readonly nextEventAt?: number | null;
+  readonly graceTimerEndsAt?: number | null;
+  readonly endGameAt?: number | null;
+  readonly contracts?: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly description: string;
+    readonly payoffSource: string;
+    readonly payoffHash: string;
+  }>;
+  readonly eventQueue?: readonly EventQueueEntry[];
+  readonly botEntities?: ReadonlyArray<{ readonly entityId: string; readonly strategyId: string | null }>;
+  readonly displayNames?: Readonly<Record<string, string>>;
+  readonly codeBook?: Readonly<Record<string, string>>;
+  readonly books?: Readonly<Record<string, SavedBook>>;
+  readonly positions?: Readonly<Record<string, Record<string, number>>>;
+  readonly cash?: Readonly<Record<string, number>>;
+  readonly trades?: readonly Trade[];
+  readonly nextOrderSeq?: number;
+  readonly nextTradeSeq?: number;
+  readonly settlements?: Readonly<Record<string, number>> | null;
+  readonly finalPnl?: Readonly<Record<string, number>> | null;
+}
+
+interface SavedBook {
+  readonly contractId: string;
+  readonly bids: ReadonlyArray<SavedLevel>;
+  readonly offers: ReadonlyArray<SavedLevel>;
+  readonly lastTradePrice: number | null;
+}
+
+interface SavedLevel {
+  readonly price: number;
+  readonly orders: ReadonlyArray<{
+    readonly id: string;
+    readonly participant: ParticipantId;
+    readonly contractId: string;
+    readonly side: OrderSide;
+    readonly price: number;
+    readonly qty: number;
+    readonly enteredAt: number;
+  }>;
 }
 
 export interface SessionConstructorArgs {
@@ -138,7 +189,7 @@ export function loadFromOpts(blob: MockerySave, opts: LoadOpts): MockerySession 
     hostUserId: blob.hostUserId,
     options: blob.options,
   });
-  // TODO(persistence): hydrate full state.
+  s.hydrate(blob);
   return s;
 }
 
@@ -1089,14 +1140,157 @@ export class MockerySession implements GameSession<MockerySave> {
   // -------------------------------------------------------------------
 
   serialize(): MockerySave {
+    const status: MockerySave["status"] = this.inPlatformLobby ? "lobby" : this.state.status;
+    if (this.inPlatformLobby) {
+      return {
+        version: 2,
+        options: this.state.options,
+        hostUserId: this.state.hostUserId,
+        seats: this.state.seats.slice(),
+        seatDisplayNames: this.seatDisplayNames.slice(),
+        status,
+      };
+    }
+
+    const books: Record<string, SavedBook> = {};
+    for (const [cid, b] of Object.entries(this.state.books)) {
+      books[cid] = saveBook(b);
+    }
+
+    const positions: Record<string, Record<string, number>> = {};
+    for (const [k, m] of Object.entries(this.state.positions)) {
+      positions[k] = { ...m } as Record<string, number>;
+    }
+
     return {
-      version: 1,
+      version: 2,
       options: this.state.options,
       hostUserId: this.state.hostUserId,
       seats: this.state.seats.slice(),
       seatDisplayNames: this.seatDisplayNames.slice(),
-      status: this.inPlatformLobby ? "lobby" : this.state.status,
+      status,
+      rngState: getRngState(this.state.rng),
+      informedCards: this.state.informedCards.slice(),
+      publicCards: this.state.publicCards.slice(),
+      publicRevealed: this.state.publicRevealed.slice(),
+      phase: this.state.phase,
+      startedAt: this.state.startedAt,
+      nextEventAt: this.state.nextEventAt,
+      graceTimerEndsAt: this.state.graceTimerEndsAt,
+      endGameAt: this.state.endGameAt,
+      contracts: this.state.contracts.map((c) => ({
+        id: c.id as string,
+        name: c.name,
+        description: c.description,
+        payoffSource: c.payoffSource,
+        payoffHash: c.payoffHash,
+      })),
+      eventQueue: this.state.eventQueue.map((e) => ({ ...e })),
+      botEntities: this.state.botEntities.map((b) => ({ ...b })),
+      displayNames: { ...this.state.displayNames },
+      codeBook: { ...this.state.codeBook },
+      books,
+      positions,
+      cash: { ...this.state.cash },
+      trades: this.state.trades.map((t) => ({ ...t })),
+      nextOrderSeq: this.state.nextOrderSeq,
+      nextTradeSeq: this.state.nextTradeSeq,
+      settlements: this.state.settlements ? { ...this.state.settlements } as Record<string, number> : null,
+      finalPnl: this.state.finalPnl ? { ...this.state.finalPnl } : null,
     };
+  }
+
+  /** Restore session state from a previously serialized blob. Called by
+   *  `loadFromOpts` after construction; tests can also call this directly
+   *  to round-trip a save against a custom clock. */
+  hydrate(blob: MockerySave): void {
+    // Lobby blobs carry only seats + display names.
+    for (let i = 0; i < this.state.seats.length; i++) {
+      this.state.seats[i] = blob.seats[i] ?? null;
+      this.seatDisplayNames[i] = blob.seatDisplayNames[i] ?? null;
+    }
+    if (blob.status === "lobby") {
+      this.inPlatformLobby = true;
+      this.lastActivityAt = this.clock.now();
+      return;
+    }
+
+    this.inPlatformLobby = false;
+    if (blob.rngState) this.state.rng = rngFromState([...blob.rngState]);
+    this.state.status = blob.status;
+    this.state.informedCards = blob.informedCards ? [...blob.informedCards] : [];
+    this.state.publicCards = blob.publicCards ? [...blob.publicCards] : [];
+    this.state.publicRevealed = blob.publicRevealed ? [...blob.publicRevealed] : [];
+    this.state.phase = blob.phase ?? 0;
+    this.state.startedAt = blob.startedAt ?? this.state.startedAt;
+    this.state.nextEventAt = blob.nextEventAt ?? null;
+    this.state.graceTimerEndsAt = blob.graceTimerEndsAt ?? null;
+    this.state.endGameAt = blob.endGameAt ?? null;
+    this.state.contracts = (blob.contracts ?? []).map((c) => ({
+      id: asContractId(c.id),
+      name: c.name,
+      description: c.description,
+      payoffSource: c.payoffSource,
+      payoffHash: c.payoffHash,
+    })) as ContractDef[];
+    this.state.eventQueue = (blob.eventQueue ?? []).map((e) => ({ ...e })) as EventQueueEntry[];
+    this.state.botEntities = (blob.botEntities ?? []).map((b) => ({ ...b }));
+    this.state.displayNames = { ...(blob.displayNames ?? {}) };
+    this.state.codeBook = { ...(blob.codeBook ?? {}) };
+    this.state.positions = {};
+    for (const [k, m] of Object.entries(blob.positions ?? {})) {
+      this.state.positions[k] = { ...m } as Record<ContractId, number>;
+    }
+    this.state.cash = { ...(blob.cash ?? {}) };
+    this.state.trades = (blob.trades ?? []).map((t) => ({ ...t })) as Trade[];
+    this.state.nextOrderSeq = blob.nextOrderSeq ?? 1;
+    this.state.nextTradeSeq = blob.nextTradeSeq ?? 1;
+    this.state.settlements = blob.settlements
+      ? ({ ...blob.settlements } as Record<ContractId, number>)
+      : null;
+    this.state.finalPnl = blob.finalPnl ? { ...blob.finalPnl } : null;
+
+    // Rebuild order books: levels carry order copies; ordersById is
+    // relinked to the SAME order references so cancel/match operations
+    // see consistent qty mutations.
+    this.state.books = {};
+    for (const [cid, sb] of Object.entries(blob.books ?? {})) {
+      this.state.books[asContractId(cid)] = restoreBook(sb);
+    }
+
+    // Re-arm timers. The saved targets are wallclock; if `now` is past
+    // the target (process slept), `Math.max(0, …)` fires immediately.
+    if (this.eventTimer !== null) { this.clock.cancel(this.eventTimer); this.eventTimer = null; }
+    if (this.endTimer !== null) { this.clock.cancel(this.endTimer); this.endTimer = null; }
+    if (this.graceTimer !== null) { this.clock.cancel(this.graceTimer); this.graceTimer = null; }
+    if (this.state.status === "playing") {
+      const now = this.clock.now();
+      if (this.state.options.eventMode === "auto") {
+        if (this.state.endGameAt !== null) {
+          this.endTimer = this.clock.schedule(
+            Math.max(0, this.state.endGameAt - now),
+            () => this.onAutoEndGameTimer(),
+          );
+        } else if (this.state.nextEventAt !== null) {
+          this.eventTimer = this.clock.schedule(
+            Math.max(0, this.state.nextEventAt - now),
+            () => this.onAutoEventTimer(),
+          );
+        }
+      }
+      if (this.state.graceTimerEndsAt !== null) {
+        this.graceTimer = this.clock.schedule(
+          Math.max(0, this.state.graceTimerEndsAt - now),
+          () => {
+            this.graceTimer = null;
+            this.state.graceTimerEndsAt = null;
+            if (this.state.status === "playing") this.settleAndFinish();
+          },
+        );
+      }
+    }
+
+    this.lastActivityAt = this.clock.now();
   }
 
   describe(): SessionDescription {
@@ -1248,6 +1442,60 @@ function parseEventEntry(raw: unknown): EventQueueEntry | null {
 function keyToParticipant(key: string): ParticipantId {
   if (key.startsWith("p:")) return { kind: "player", userId: key.slice(2) as UserId };
   return { kind: "bot", entityId: key.slice(2) };
+}
+
+function saveBook(b: OrderBook): SavedBook {
+  return {
+    contractId: b.contractId as string,
+    lastTradePrice: b.lastTradePrice,
+    bids: b.bids.map(saveLevel),
+    offers: b.offers.map(saveLevel),
+  };
+}
+
+function saveLevel(level: PriceLevel): SavedLevel {
+  return {
+    price: level.price,
+    orders: level.orders.map((o) => ({
+      id: o.id as string,
+      participant: cloneParticipant(o.participant),
+      contractId: o.contractId as string,
+      side: o.side,
+      price: o.price,
+      qty: o.qty,
+      enteredAt: o.enteredAt,
+    })),
+  };
+}
+
+function restoreBook(sb: SavedBook): OrderBook {
+  const ordersById: Record<OrderId, Order> = {};
+  const restoreLevel = (sl: SavedLevel): PriceLevel => {
+    const orders: Order[] = sl.orders.map((o) => ({
+      id: asOrderId(o.id),
+      participant: cloneParticipant(o.participant),
+      contractId: asContractId(o.contractId),
+      side: o.side,
+      price: o.price,
+      qty: o.qty,
+      enteredAt: o.enteredAt,
+    }));
+    for (const o of orders) ordersById[o.id] = o;
+    return { price: sl.price, orders };
+  };
+  return {
+    contractId: asContractId(sb.contractId),
+    bids: sb.bids.map(restoreLevel),
+    offers: sb.offers.map(restoreLevel),
+    lastTradePrice: sb.lastTradePrice,
+    ordersById,
+  };
+}
+
+function cloneParticipant(p: ParticipantId): ParticipantId {
+  return p.kind === "player"
+    ? { kind: "player", userId: p.userId }
+    : { kind: "bot", entityId: p.entityId };
 }
 
 // ---------------------------------------------------------------------------
