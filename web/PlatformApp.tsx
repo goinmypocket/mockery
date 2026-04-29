@@ -11,6 +11,7 @@ import { SetupScreen } from "./screens/SetupScreen";
 import { PlayingScreen } from "./screens/PlayingScreen";
 import { FinishedScreen } from "./screens/FinishedScreen";
 
+import "rc-dock/dist/rc-dock-dark.css";
 import "./styles/reset.css";
 import "./styles/app.css";
 
@@ -55,6 +56,8 @@ export default function PlatformApp({ ctx }: Props): ReactNode {
     <PlayingScreen
       snapshot={session.snapshot}
       send={session.send}
+      userId={ctx.userId}
+      tableId={ctx.tableId}
       lastRejection={session.lastRejection}
       clearRejection={session.clearRejection}
     />

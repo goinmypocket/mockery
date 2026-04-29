@@ -154,15 +154,8 @@
 /* ------ playing screen ------ */
 .mk-playing { display: flex; flex-direction: column; height: 100%; }
 .mk-playing__rejection { padding: 4px 12px; }
-.mk-playing__grid {
-  flex: 1; display: grid; gap: 8px; padding: 8px;
-  grid-template-columns: 280px 1fr 360px;
-  grid-template-rows: auto auto 1fr;
-  grid-template-areas:
-    "cards book positions"
-    "cards tns positions"
-    "myorders tns host";
-  overflow: hidden;
+.mk-playing__workspace {
+  flex: 1; min-height: 0; position: relative;
 }
 .mk-panel {
   background: var(--mk-panel); border: 1px solid var(--mk-border);
@@ -172,17 +165,62 @@
   margin: 0 0 8px 0; font-size: 0.9em; color: var(--mk-muted);
   text-transform: uppercase; letter-spacing: 0.05em;
 }
-.mk-panel--cards { grid-area: cards; }
-.mk-panel--book { grid-area: book; }
-.mk-panel--tns { grid-area: tns; }
-.mk-panel--positions { grid-area: positions; }
-.mk-panel--my-orders { grid-area: myorders; }
-.mk-panel--host { grid-area: host; }
 .mk-playing__placer {
   border-top: 1px solid var(--mk-border);
   background: var(--mk-panel);
   padding: 12px;
 }
+
+/* ------ workspace (rc-dock) ------ */
+.mk-workspace { display: flex; flex-direction: column; height: 100%; }
+.mk-workspace__menubar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px;
+  background: var(--mk-panel);
+  border-bottom: 1px solid var(--mk-border);
+}
+.mk-workspace__dock { flex: 1; position: relative; }
+/* Dark-tint rc-dock to match Mockery's palette without importing
+   rc-dock-dark.css globally. The dark sheet is also imported at
+   the entry point; these overrides smooth out remaining mismatches. */
+.dock-layout { background: var(--mk-bg); color: var(--mk-text); }
+.dock-panel { background: var(--mk-panel); border: 1px solid var(--mk-border); }
+.dock-bar { background: var(--mk-panel-2); border-bottom: 1px solid var(--mk-border); }
+.dock-tab { color: var(--mk-muted); }
+.dock-tab.dock-tab-active { color: var(--mk-text); border-bottom-color: var(--mk-accent); }
+.dock-divider { background: var(--mk-border); }
+.mk-module { padding: 12px; height: 100%; overflow: auto; box-sizing: border-box; }
+
+/* ------ menu (popover) ------ */
+.mk-menu { position: relative; }
+.mk-menu__panel {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+  background: var(--mk-panel); border: 1px solid var(--mk-border);
+  border-radius: 6px; padding: 4px; min-width: 220px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.mk-menu__item {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: 0; color: var(--mk-text);
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  font-size: 0.95em;
+}
+.mk-menu__item:hover { background: var(--mk-panel-2); }
+.mk-menu__item--grow { flex: 1; }
+.mk-menu__row { display: flex; align-items: center; gap: 2px; }
+.mk-menu__icon {
+  background: transparent; border: 0; color: var(--mk-muted);
+  padding: 4px 8px; border-radius: 4px; cursor: pointer;
+}
+.mk-menu__icon:hover { background: var(--mk-panel-2); color: var(--mk-text); }
+.mk-menu__sep {
+  font-size: 0.8em; color: var(--mk-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 6px 10px 2px 10px;
+  border-top: 1px solid var(--mk-border); margin-top: 4px;
+}
+.mk-menu__sep:first-child { border-top: 0; margin-top: 0; }
+.mk-menu__hint { padding: 6px 10px; color: var(--mk-muted); font-size: 0.9em; }
 
 /* ------ topbar ------ */
 .mk-topbar {
