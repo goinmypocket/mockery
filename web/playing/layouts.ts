@@ -132,3 +132,61 @@ export function clearActiveLayout(userId: string, tableId: string): void {
     localStorage.removeItem(activeKey(userId, tableId));
   } catch { /* ignore */ }
 }
+
+// ---------------------------------------------------------------------------
+// Per-panel font size (per moduleId, scoped to (userId, tableId))
+// ---------------------------------------------------------------------------
+
+export type FontSizeMap = Record<string, number>;
+
+function fontSizeKey(userId: string, tableId: string): string {
+  return `mockery.fontsize.${userId}.${tableId}`;
+}
+
+export function loadFontSizes(userId: string, tableId: string): FontSizeMap {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(fontSizeKey(userId, tableId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: FontSizeMap = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveFontSizes(userId: string, tableId: string, sizes: FontSizeMap): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(fontSizeKey(userId, tableId), JSON.stringify(sizes));
+  } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Global workspace font size (per user, applies across all tables)
+// ---------------------------------------------------------------------------
+
+const GLOBAL_FONT_KEY = "mockery.global-fontsize";
+
+export function loadGlobalFontSize(userId: string): number | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${GLOBAL_FONT_KEY}.${userId}`);
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveGlobalFontSize(userId: string, px: number): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(`${GLOBAL_FONT_KEY}.${userId}`, String(px));
+  } catch { /* ignore */ }
+}

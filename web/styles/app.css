@@ -90,6 +90,27 @@
 .mk-mode-picker { display: flex; gap: 16px; margin-bottom: 12px; }
 .mk-mode-picker label { color: var(--mk-text); }
 
+.mk-options { display: flex; flex-direction: column; gap: 12px; }
+.mk-options__row { display: flex; gap: 16px; flex-wrap: wrap; }
+.mk-options__row label {
+  display: flex; flex-direction: column; gap: 4px;
+  color: var(--mk-muted); font-size: 0.9em; min-width: 180px;
+}
+.mk-options__row input[type="number"],
+.mk-options__row input[type="text"],
+.mk-options__row select {
+  background: var(--mk-bg); color: var(--mk-text);
+  border: 1px solid var(--mk-border); border-radius: 4px;
+  padding: 6px 8px; font: inherit;
+}
+.mk-options__wide { flex: 1 1 100%; }
+.mk-options__wide input { width: 100%; }
+.mk-options__check {
+  flex-direction: row !important; align-items: center;
+  align-self: end; min-width: auto !important;
+}
+.mk-options__check input { margin: 0 8px 0 0; }
+
 /* ------ contracts editor ------ */
 .mk-contracts {
   display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 16px;
@@ -189,7 +210,26 @@
 .dock-tab { color: var(--mk-muted); }
 .dock-tab.dock-tab-active { color: var(--mk-text); border-bottom-color: var(--mk-accent); }
 .dock-divider { background: var(--mk-border); }
-.mk-module { padding: 12px; height: 100%; overflow: auto; box-sizing: border-box; }
+.mk-module {
+  height: 100%; overflow: hidden; box-sizing: border-box;
+  display: flex; flex-direction: column;
+}
+.mk-module__toolbar {
+  display: flex; gap: 4px; align-items: center; justify-content: flex-end;
+  padding: 4px 6px; border-bottom: 1px solid var(--mk-border);
+  font-size: 11px;
+}
+.mk-module__zoom {
+  background: var(--mk-panel); color: var(--mk-muted);
+  border: 1px solid var(--mk-border); border-radius: 3px;
+  padding: 1px 6px; font: inherit; cursor: pointer;
+}
+.mk-module__zoom:hover { color: var(--mk-text); border-color: var(--mk-text); }
+.mk-module__zoom-readout {
+  color: var(--mk-muted); min-width: 20px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.mk-module__body { flex: 1; overflow: auto; padding: 12px; }
 
 /* ------ menu (popover) ------ */
 .mk-menu { position: relative; }
@@ -237,54 +277,97 @@
   font-family: ui-monospace, monospace; font-size: 1.6em; font-weight: 600;
 }
 .mk-topbar__next { color: var(--mk-muted); }
+.mk-topbar__zoom {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--mk-muted);
+}
+.mk-topbar__zoom-btn {
+  background: var(--mk-panel-2); color: var(--mk-text);
+  border: 1px solid var(--mk-border); border-radius: 3px;
+  padding: 2px 6px; font: inherit; cursor: pointer;
+}
+.mk-topbar__zoom-btn:hover { border-color: var(--mk-text); }
+.mk-topbar__zoom-readout {
+  min-width: 22px; text-align: center; font-variant-numeric: tabular-nums;
+}
 
 /* ------ card display ------ */
-.mk-cards-display { display: flex; flex-direction: column; gap: 16px; }
-.mk-cards-display h4 { margin: 0 0 8px 0; color: var(--mk-muted); font-size: 0.9em; }
-.mk-cards-display__row { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.mk-cards-display { display: flex; flex-direction: column; gap: 8px; }
+.mk-cards-display h4 { margin: 0 0 4px 0; color: var(--mk-muted); font-size: 0.85em; }
+.mk-cards-display__row { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
 .mk-card {
-  background: var(--mk-panel-2); border: 2px solid var(--mk-border);
-  border-radius: 6px; width: 56px; height: 80px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  position: relative;
+  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  border-radius: 3px; width: 28px; height: 36px;
+  display: flex; flex-direction: column; align-items: stretch;
+  position: relative; box-sizing: border-box; overflow: hidden;
 }
-.mk-card__face { font-size: 1.6em; font-family: ui-monospace, monospace; }
-.mk-card__label { font-size: 0.7em; color: var(--mk-muted); position: absolute; bottom: 4px; }
+.mk-card__face {
+  flex: 1; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3em; font-family: ui-monospace, monospace; line-height: 1;
+}
+.mk-card__banner {
+  border-top: 1px solid var(--mk-border);
+  background: var(--mk-panel);
+  color: var(--mk-muted);
+  font-size: 0.55em; font-weight: 600; line-height: 1;
+  padding: 2px 1px; text-align: center;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mk-card--mine .mk-card__banner { color: var(--mk-accent); }
 .mk-card--mine { border-color: var(--mk-accent); }
 .mk-card--revealed { border-color: var(--mk-success); }
 .mk-card--empty { opacity: 0.4; }
 
 /* ------ order book ------ */
-.mk-book { display: flex; flex-direction: column; gap: 4px; }
-.mk-book__row { background: var(--mk-panel-2); border-radius: 4px; }
-.mk-book__line {
-  display: flex; align-items: center; gap: 4px; padding: 6px;
+.mk-book {
+  width: 100%; border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
 }
-.mk-book__hit {
-  background: var(--mk-panel); color: var(--mk-text);
-  border: 1px solid var(--mk-border); padding: 4px 8px; border-radius: 3px;
-  font-size: 0.85em;
+.mk-book th {
+  position: sticky; top: 0; background: var(--mk-panel);
+  color: var(--mk-muted); font-size: 0.8em; font-weight: 500;
+  text-align: center; padding: 4px 2px;
+  border-bottom: 1px solid var(--mk-border);
 }
-.mk-book__hit:hover { background: #283038; }
-.mk-book__qty {
-  width: 40px; background: var(--mk-bg); border: 1px solid var(--mk-border);
-  color: var(--mk-text); padding: 2px 4px; border-radius: 3px; text-align: center;
-  font-family: ui-monospace, monospace;
-}
-.mk-book__side {
-  flex: 1; background: transparent; border: 1px solid transparent;
-  color: var(--mk-text); padding: 4px 8px; border-radius: 3px; text-align: left;
-}
-.mk-book__side:hover { border-color: var(--mk-border); }
-.mk-book__side--bid { text-align: right; }
-.mk-book__side--offer { text-align: left; }
+.mk-book td { padding: 3px 2px; vertical-align: middle; text-align: center; }
+.mk-book__row { background: var(--mk-panel-2); }
+.mk-book__row + .mk-book__row { border-top: 2px solid var(--mk-bg); }
+.mk-book__row--level { background: transparent; font-size: 0.92em; }
+.mk-book__row--level td { padding: 2px 2px; color: var(--mk-muted); }
+
+.mk-book__expand { width: 22px; padding: 0 !important; }
+.mk-book__cell { cursor: pointer; padding: 3px 4px !important; }
+.mk-book__cell:hover { background: rgba(255,255,255,0.05); border-radius: 3px; }
+
+/* Contract cell sits between bid and offer with NO extra padding so the
+   prices nestle right up to the contract pill. */
+.mk-book__contract-cell { padding: 3px 2px !important; white-space: nowrap; }
 .mk-book__contract {
   background: var(--mk-panel); color: var(--mk-text); border: 1px solid var(--mk-border);
-  padding: 4px 12px; border-radius: 4px; font-weight: 600;
+  padding: 2px 8px; border-radius: 4px; font-weight: 600; cursor: pointer;
+  font: inherit; white-space: nowrap;
 }
 .mk-book__contract:hover { background: #283038; }
-.mk-book__expanded { margin-top: 4px; font-size: 0.9em; }
-.mk-book__expanded td { cursor: pointer; }
+
+.mk-book__qty-cell { width: 36px; padding: 2px 2px !important; }
+.mk-book__action-cell { width: 38px; padding: 2px 2px !important; }
+.mk-book__qty {
+  width: 32px; background: var(--mk-bg); border: 1px solid var(--mk-border);
+  color: var(--mk-text); padding: 2px 2px; border-radius: 3px; text-align: center;
+  font-family: ui-monospace, monospace; font-size: inherit;
+}
+.mk-book__qty::-webkit-outer-spin-button,
+.mk-book__qty::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.mk-book__hit {
+  background: var(--mk-panel); color: var(--mk-text);
+  border: 1px solid var(--mk-border); padding: 2px 6px; border-radius: 3px;
+  font-size: 0.9em; cursor: pointer;
+}
+.mk-book__hit:hover:not(:disabled) { background: #283038; }
+.mk-book__hit:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ------ order placer ------ */
 .mk-placer {
@@ -311,13 +394,24 @@
 .mk-tns__phase { color: var(--mk-muted); width: 30px; text-align: center; }
 .mk-tns__buyer { color: var(--mk-bid); }
 .mk-tns__seller { color: var(--mk-offer); }
-.mk-tns__aggressor { font-weight: 700; }
+.mk-tns__aggressor {
+  font-weight: 900; text-decoration: underline;
+  text-decoration-thickness: 2px; text-underline-offset: 3px;
+}
+/* Phase-coloured backgrounds. Distinct, dim enough not to fight text. */
 .mk-phase-0 { background: #161b22; }
 .mk-phase-1 { background: #1a2030; }
 .mk-phase-2 { background: #1c2520; }
 .mk-phase-3 { background: #251c20; }
 .mk-phase-4 { background: #1f1c25; }
 .mk-phase-5 { background: #25201c; }
+/* Per-contract left-edge accent, on top of the phase background. */
+.mk-contract-0 td:first-child { box-shadow: inset 4px 0 0 #4f9eff; }
+.mk-contract-1 td:first-child { box-shadow: inset 4px 0 0 #ff7b54; }
+.mk-contract-2 td:first-child { box-shadow: inset 4px 0 0 #6dd58a; }
+.mk-contract-3 td:first-child { box-shadow: inset 4px 0 0 #d18bff; }
+.mk-contract-4 td:first-child { box-shadow: inset 4px 0 0 #ffd166; }
+.mk-contract-5 td:first-child { box-shadow: inset 4px 0 0 #5fd2c8; }
 
 /* ------ host controls ------ */
 .mk-host { display: flex; flex-direction: column; gap: 12px; }

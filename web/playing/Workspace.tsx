@@ -7,7 +7,7 @@
 // hide it accidentally.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import DockLayout from "rc-dock";
 import type { LayoutBase, TabBase, TabData } from "rc-dock";
@@ -18,9 +18,12 @@ import {
   builtinDefaultLayout,
   clearActiveLayout,
   loadActiveLayout,
+  loadFontSizes,
   loadLibrary,
   saveActiveLayout,
+  saveFontSizes,
   saveLibrary,
+  type FontSizeMap,
   type LayoutLibrary,
 } from "./layouts";
 
@@ -31,20 +34,87 @@ interface Props {
   readonly userId: string;
   /** The current table id; layouts are persisted per (userId, tableId). */
   readonly tableId: string;
+  /** Workspace-wide base font size in px (set by PlayingScreen on the
+   *  outer container). Per-panel overrides layer on top of this; the
+   *  global control itself lives in TopBar to save real estate, so
+   *  Workspace just needs the value as the panel-default fallback. */
+  readonly globalFont: number;
 }
 
-/** A latest-value ref of the snapshot/send pair so loadTab callbacks
- *  (which rc-dock invokes lazily, possibly across snapshots) always see
- *  the freshest projection without forcing a full layout rebuild. */
+/** Live snapshot/send pair pushed through React Context so panels
+ *  re-render on every snapshot without rc-dock having to recreate the
+ *  cached tab elements. We need Context (not a ref) because rc-dock's
+ *  DockTabPane is PureComponent — it skips re-rendering when its
+ *  cached children element is referentially unchanged, which means
+ *  reading from a ref inside the panel would never observe updates. */
 interface LiveCtx {
   snapshot: ProjectedSnapshot;
   send(msg: unknown): void;
+  /** Effective font size in px for a given module instance — the
+   *  per-panel override if set, else the workspace-global default. */
+  fontSizeFor(moduleId: string): number;
+  /** Set a per-panel override. Panel "Reset" sends `null` to clear. */
+  setFontSizeFor(moduleId: string, px: number | null): void;
+  /** True when this panel has its own override (vs. inheriting global). */
+  hasFontSizeOverride(moduleId: string): boolean;
 }
 
-export function Workspace({ snapshot, send, userId, tableId }: Props): ReactNode {
+const LiveContext = createContext<LiveCtx | null>(null);
+
+function useLive(): LiveCtx {
+  const v = useContext(LiveContext);
+  if (!v) throw new Error("module rendered outside <LiveContext.Provider>");
+  return v;
+}
+
+/** Default and clamp range for per-panel font size (px). */
+const FONT_SIZE_DEFAULT = 14;
+const FONT_SIZE_MIN = 6;
+const FONT_SIZE_MAX = 32;
+
+export function Workspace({
+  snapshot, send, userId, tableId, globalFont,
+}: Props): ReactNode {
   const isHost = snapshot.viewer.userId === snapshot.tableHostUserId;
-  const liveRef = useRef<LiveCtx>({ snapshot, send });
-  liveRef.current = { snapshot, send };
+
+  // Per-panel font size override, persisted per (userId, tableId).
+  const [fontSizes, setFontSizes] = useState<FontSizeMap>(() =>
+    loadFontSizes(userId, tableId),
+  );
+  const setFontSizeFor = useCallback(
+    (moduleId: string, px: number | null) => {
+      setFontSizes((prev) => {
+        let next: FontSizeMap;
+        if (px === null) {
+          // Clear override — fall back to global.
+          const { [moduleId]: _drop, ...rest } = prev;
+          void _drop;
+          next = rest;
+        } else {
+          const clamped = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, Math.round(px)));
+          next = { ...prev, [moduleId]: clamped };
+        }
+        saveFontSizes(userId, tableId, next);
+        return next;
+      });
+    },
+    [userId, tableId],
+  );
+  const fontSizeFor = useCallback(
+    (moduleId: string) => fontSizes[moduleId] ?? globalFont,
+    [fontSizes, globalFont],
+  );
+  const hasFontSizeOverride = useCallback(
+    (moduleId: string) => moduleId in fontSizes,
+    [fontSizes],
+  );
+
+  // The live ctx for the context provider. New object identity on every
+  // snapshot change so consumers (the docked panels) re-render.
+  const liveCtx = useMemo<LiveCtx>(
+    () => ({ snapshot, send, fontSizeFor, setFontSizeFor, hasFontSizeOverride }),
+    [snapshot, send, fontSizeFor, setFontSizeFor, hasFontSizeOverride],
+  );
 
   // -----------------------------------------------------------------
   // Layout state
@@ -81,11 +151,7 @@ export function Workspace({ snapshot, send, userId, tableId }: Props): ReactNode
     return {
       id: mod.id,
       title: mod.title,
-      // The live ref ensures every render sees the freshest snapshot.
-      // rc-dock keeps the same TabData across re-renders unless we
-      // explicitly load a new layout, so we rely on React to re-render
-      // the inner component when liveRef.current changes.
-      content: <ModuleContainer moduleId={mod.id} liveRef={liveRef} />,
+      content: <ModuleContainer moduleId={mod.id} />,
       closable: true,
       group: "default",
     };
@@ -168,7 +234,7 @@ export function Workspace({ snapshot, send, userId, tableId }: Props): ReactNode
     const tab: TabData = {
       id: `${id}-${Date.now()}`,
       title: mod.title,
-      content: <ModuleContainer moduleId={id} liveRef={liveRef} />,
+      content: <ModuleContainer moduleId={id} />,
       closable: true,
       group: "default",
     };
@@ -180,46 +246,73 @@ export function Workspace({ snapshot, send, userId, tableId }: Props): ReactNode
   // Render
   // -----------------------------------------------------------------
   return (
-    <div className="mk-workspace">
-      <LayoutMenu
-        library={library}
-        onSaveAs={onSaveAs}
-        onLoad={onLoad}
-        onDelete={onDelete}
-        onSetDefault={onSetDefault}
-        onResetToBuiltin={onResetToBuiltin}
-        onAddPanel={onAddPanel}
-      />
-      <div className="mk-workspace__dock">
-        <DockLayout
-          ref={dockRef}
-          defaultLayout={initialLayout as never}
-          loadTab={loadTab}
-          onLayoutChange={handleLayoutChange}
-          style={{ position: "absolute", inset: 0 }}
+    <LiveContext.Provider value={liveCtx}>
+      <div className="mk-workspace">
+        <LayoutMenu
+          library={library}
+          onSaveAs={onSaveAs}
+          onLoad={onLoad}
+          onDelete={onDelete}
+          onSetDefault={onSetDefault}
+          onResetToBuiltin={onResetToBuiltin}
+          onAddPanel={onAddPanel}
         />
+        <div className="mk-workspace__dock">
+          <DockLayout
+            ref={dockRef}
+            defaultLayout={initialLayout as never}
+            loadTab={loadTab}
+            onLayoutChange={handleLayoutChange}
+            style={{ position: "absolute", inset: 0 }}
+          />
+        </div>
       </div>
-    </div>
+    </LiveContext.Provider>
   );
 }
 
 // ---------------------------------------------------------------------------
-// ModuleContainer — wraps a module render with the live ctx ref so that
-// every snapshot update flows through without rc-dock having to recreate
-// the tab content.
+// ModuleContainer — reads the live snapshot/send pair from context so
+// every snapshot update re-renders this panel even though rc-dock
+// caches the React element across renders (its DockTabPane is
+// PureComponent and would otherwise short-circuit prop diffs).
 // ---------------------------------------------------------------------------
 
-function ModuleContainer(props: {
-  readonly moduleId: ModuleId;
-  readonly liveRef: { current: LiveCtx };
-}): ReactNode {
-  const { moduleId, liveRef } = props;
-  const ctx = liveRef.current;
+function ModuleContainer(props: { readonly moduleId: ModuleId }): ReactNode {
+  const { moduleId } = props;
+  const ctx = useLive();
   const mod = MODULES[moduleId];
   if (!mod) return <div className="mk-loading">Unknown module: {moduleId}</div>;
+  const px = ctx.fontSizeFor(moduleId);
+  const overridden = ctx.hasFontSizeOverride(moduleId);
   return (
-    <div className="mk-module">
-      {mod.render({ snapshot: ctx.snapshot, send: ctx.send })}
+    <div className="mk-module" style={{ fontSize: `${px}px` }}>
+      <div className="mk-module__toolbar">
+        <button
+          type="button" className="mk-module__zoom"
+          onClick={() => ctx.setFontSizeFor(moduleId, px - 1)}
+          title="Smaller"
+          aria-label="Decrease font size"
+        >A−</button>
+        <span className="mk-module__zoom-readout">{px}{overridden ? "" : "*"}</span>
+        <button
+          type="button" className="mk-module__zoom"
+          onClick={() => ctx.setFontSizeFor(moduleId, px + 1)}
+          title="Larger"
+          aria-label="Increase font size"
+        >A+</button>
+        {overridden ? (
+          <button
+            type="button" className="mk-module__zoom"
+            onClick={() => ctx.setFontSizeFor(moduleId, null)}
+            title="Reset to workspace default"
+            aria-label="Reset font size to global"
+          >↺</button>
+        ) : null}
+      </div>
+      <div className="mk-module__body">
+        {mod.render({ snapshot: ctx.snapshot, send: ctx.send })}
+      </div>
     </div>
   );
 }
@@ -329,6 +422,7 @@ function LayoutMenu(props: LayoutMenuProps): ReactNode {
           </div>
         ) : null}
       </div>
+
     </div>
   );
 }

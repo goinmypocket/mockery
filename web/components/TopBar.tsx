@@ -5,7 +5,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProjectedSnapshot } from "../../engine/project";
 
-export function TopBar({ snapshot }: { snapshot: ProjectedSnapshot }): ReactNode {
+interface Props {
+  readonly snapshot: ProjectedSnapshot;
+  /** Optional global font controls. When omitted (e.g. in setup), the
+   *  zoom widget is hidden. */
+  readonly globalFont?: number;
+  onGlobalFontDelta?(delta: number): void;
+}
+
+export function TopBar({ snapshot, globalFont, onGlobalFontDelta }: Props): ReactNode {
   // Tick locally between server EVENT_TIMER ticks for a smoother countdown.
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -27,6 +35,21 @@ export function TopBar({ snapshot }: { snapshot: ProjectedSnapshot }): ReactNode
           ? `Next: ${next.type === "ROTATE_INFORMED" ? "ROTATE" : `REVEAL ${next.slotIndex ?? "auto"}`}`
           : "Queue empty"}
       </div>
+      {globalFont !== undefined && onGlobalFontDelta ? (
+        <div className="mk-topbar__zoom" title="Global font size">
+          <button
+            type="button" className="mk-topbar__zoom-btn"
+            onClick={() => onGlobalFontDelta(-1)}
+            aria-label="Decrease global font size"
+          >A−</button>
+          <span className="mk-topbar__zoom-readout">{globalFont}</span>
+          <button
+            type="button" className="mk-topbar__zoom-btn"
+            onClick={() => onGlobalFontDelta(+1)}
+            aria-label="Increase global font size"
+          >A+</button>
+        </div>
+      ) : null}
     </header>
   );
 }

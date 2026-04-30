@@ -26,9 +26,7 @@ export function CardDisplay({ snapshot }: Props): ReactNode {
                 <div className="mk-card__face">
                   {isMe && snapshot.viewer.myCard !== null ? snapshot.viewer.myCard : "?"}
                 </div>
-                <div className="mk-card__label">
-                  {p.code}{isMe ? " (you)" : ""}
-                </div>
+                <div className="mk-card__banner">{p.code}</div>
               </li>
             );
           })}
@@ -36,6 +34,7 @@ export function CardDisplay({ snapshot }: Props): ReactNode {
           {Array.from({ length: Math.max(0, informedCount - informedParticipants.length) }).map((_, i) => (
             <li key={`empty-${i}`} className="mk-card mk-card--empty">
               <div className="mk-card__face">?</div>
+              <div className="mk-card__banner">—</div>
             </li>
           ))}
         </ul>
@@ -47,7 +46,7 @@ export function CardDisplay({ snapshot }: Props): ReactNode {
           {snapshot.publicCards.map((v, i) => (
             <li key={i} className={`mk-card ${v !== null ? "mk-card--revealed" : ""}`}>
               <div className="mk-card__face">{v ?? "?"}</div>
-              <div className="mk-card__label">slot {i}</div>
+              <div className="mk-card__banner">P{i + 1}</div>
             </li>
           ))}
         </ul>

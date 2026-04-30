@@ -32,6 +32,9 @@ export function TnsPanel({ snapshot }: Props): ReactNode {
 
   const codes = Array.from(new Set(snapshot.participants.map((p) => p.code))).sort();
   const contractName = (id: string) => snapshot.contracts.find((c) => c.id === id)?.name ?? id;
+  // Stable contract ordinal so we can hand each one a distinct color.
+  const contractIndex: Record<string, number> = {};
+  snapshot.contracts.forEach((c, i) => { contractIndex[c.id] = i; });
 
   return (
     <div className="mk-tns">
@@ -66,17 +69,23 @@ export function TnsPanel({ snapshot }: Props): ReactNode {
           </tr>
         </thead>
         <tbody>
-          {rows.map((t) => (
-            <tr key={t.id} className={`mk-tns__row mk-phase-${t.phase % 6}`}>
-              <td>{formatTime(t.ts)}</td>
-              <td className="mk-tns__phase">{t.phase}</td>
-              <td className={`mk-code mk-tns__buyer ${t.aggressor === "buyer" ? "mk-tns__aggressor" : ""}`}>{t.buyerCode}</td>
-              <td className={`mk-code mk-tns__seller ${t.aggressor === "seller" ? "mk-tns__aggressor" : ""}`}>{t.sellerCode}</td>
-              <td>{contractName(t.contractId)}</td>
-              <td className="mk-num">{t.price}</td>
-              <td className="mk-num">{t.qty}</td>
-            </tr>
-          ))}
+          {rows.map((t) => {
+            const cidx = contractIndex[t.contractId] ?? 0;
+            return (
+              <tr
+                key={t.id}
+                className={`mk-tns__row mk-phase-${t.phase % 6} mk-contract-${cidx % 6}`}
+              >
+                <td>{formatTime(t.ts)}</td>
+                <td className="mk-tns__phase">{t.phase}</td>
+                <td className={`mk-code mk-tns__buyer ${t.aggressor === "buyer" ? "mk-tns__aggressor" : ""}`}>{t.buyerCode}</td>
+                <td className={`mk-code mk-tns__seller ${t.aggressor === "seller" ? "mk-tns__aggressor" : ""}`}>{t.sellerCode}</td>
+                <td>{contractName(t.contractId)}</td>
+                <td className="mk-num">{t.price}</td>
+                <td className="mk-num">{t.qty}</td>
+              </tr>
+            );
+          })}
           {rows.length === 0 ? (
             <tr><td colSpan={7} className="mk-muted">No trades yet.</td></tr>
           ) : null}
