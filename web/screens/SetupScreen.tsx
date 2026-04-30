@@ -10,6 +10,7 @@ import { ContractsEditor } from "../setup/ContractsEditor";
 import { EventQueueEditor } from "../setup/EventQueueEditor";
 import { BotEntitiesEditor } from "../setup/BotEntitiesEditor";
 import { CodeBookEditor } from "../setup/CodeBookEditor";
+import { GameOptionsEditor } from "../setup/GameOptionsEditor";
 import { IdentityRevealEditor } from "../setup/IdentityRevealEditor";
 import { RejectionChip } from "../components/RejectionChip";
 
@@ -49,6 +50,11 @@ function HostSetup({
           <RejectionChip text={lastRejection} onDismiss={clearRejection} />
         ) : null}
       </header>
+
+      <section className="mk-setup__section">
+        <h2>Game options</h2>
+        <GameOptionsEditor snapshot={snapshot} send={send} />
+      </section>
 
       <section className="mk-setup__section">
         <h2>Contracts</h2>
