@@ -34,6 +34,11 @@ export function useMockerySession(ctx: PlatformGameContext): MockerySessionView 
   const [library, setLibrary] = useState<LibraryEntryView[] | null>(null);
 
   useEffect(() => {
+    // The lazy-loaded UI may have missed the STATE_SNAPSHOT the session
+    // broadcast at attach time (the WS message arrives before this
+    // component's subscribe runs). Ask for a fresh one as soon as we're
+    // subscribed — matches coke-and-iron's pattern.
+    ctx.send({ type: "REQUEST_SNAPSHOT" });
     const unsub = ctx.subscribe((raw) => {
       const msg = raw as { type?: string };
       if (!msg || typeof msg !== "object") return;

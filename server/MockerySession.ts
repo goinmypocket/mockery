@@ -44,6 +44,7 @@ import {
   isValidCode,
   participantKey,
   type BotEntity,
+  type CodeMode,
   type ContractDef,
   type EventMode,
   type EventQueueEntry,
@@ -77,6 +78,7 @@ import {
 } from "../engine";
 import { project, type ProjectedSnapshot } from "../engine/project";
 import { getRngState, randomInt, rngFromState } from "../engine/rng";
+import { readFileSync } from "node:fs";
 import { realClock, type SessionClock, type TimerHandle } from "./clock";
 import { getLibrary, type ContractLibrary } from "./db/library";
 import { MAX_SEAT_COUNT, readResolved } from "./options";
@@ -385,6 +387,12 @@ export class MockerySession implements GameSession<MockerySave> {
 
     try {
       switch (kind) {
+        // Snapshot refresh — any phase, any participant. Lazy-mounted
+        // UIs send this when they subscribe, since the snapshot the
+        // session broadcast at attach time may have been dropped by
+        // the client before the subscription was wired up.
+        case "REQUEST_SNAPSHOT": return this.sendSnapshotTo(userId);
+
         // Order-book intents — playing only.
         case "PLACE_LIMIT": return this.onPlace(userId, msg, /* ioc */ false);
         case "PLACE_IOC":   return this.onPlace(userId, msg, /* ioc */ true);
@@ -398,6 +406,7 @@ export class MockerySession implements GameSession<MockerySave> {
         case "SETUP_SET_BOT_ENTITIES":     return this.onSetupSetBotEntities(userId, msg);
         case "SETUP_BIND_BOT_STRATEGY":    return this.onSetupBindBotStrategy(userId, msg);
         case "SETUP_SET_EVENT_MODE":       return this.onSetupSetEventMode(userId, msg);
+        case "SETUP_SET_GAME_OPTIONS":     return this.onSetupSetGameOptions(userId, msg);
         case "SETUP_SET_CODE":             return this.onSetupSetCode(userId, msg);
         case "SETUP_RESHUFFLE_CODES":      return this.onSetupReshuffleCodes(userId);
         case "SETUP_SET_IDENTITY_REVEAL":  return this.onSetupSetIdentityReveal(userId, msg);
@@ -604,6 +613,80 @@ export class MockerySession implements GameSession<MockerySave> {
     const mode = String(msg["mode"] ?? "") as EventMode;
     if (mode !== "auto" && mode !== "manual") return this.reject(userId, msg, "invalid mode");
     this.state.options = { ...this.state.options, eventMode: mode };
+    this.broadcastSnapshot();
+  }
+
+  /** Bulk update of every host-editable option that doesn't change seat
+   *  count (those stay at create time). Each field is optional; only
+   *  the keys present in `msg` are touched. Validation mirrors
+   *  `normalizeMockeryOptions`'s cross-field checks. */
+  private onSetupSetGameOptions(userId: UserId, msg: Record<string, unknown>): void {
+    if (!this.requireSetup(userId, msg)) return;
+    const cur = this.state.options;
+    const next = { ...cur };
+
+    if ("publicSlots" in msg) {
+      const v = Number(msg["publicSlots"]);
+      if (!Number.isInteger(v) || v < 0) return this.reject(userId, msg, "invalid publicSlots");
+      next.publicSlots = v;
+    }
+    if ("copiesPerValue" in msg) {
+      const v = Number(msg["copiesPerValue"]);
+      if (!Number.isInteger(v) || v <= 0) return this.reject(userId, msg, "invalid copiesPerValue");
+      next.copiesPerValue = v;
+    }
+    if ("cardValuesCsv" in msg) {
+      const raw = String(msg["cardValuesCsv"] ?? "");
+      const out = raw.split(",").map((s) => s.trim()).filter((s) => s.length > 0).map(Number);
+      if (out.length === 0 || out.some((n) => !Number.isFinite(n))) {
+        return this.reject(userId, msg, "invalid cardValuesCsv");
+      }
+      const seen = new Set<number>();
+      for (const v of out) {
+        if (seen.has(v)) return this.reject(userId, msg, `duplicate card value ${v}`);
+        seen.add(v);
+      }
+      next.cardValues = out;
+    }
+    if ("eventIntervalMin" in msg) {
+      const v = Number(msg["eventIntervalMin"]);
+      if (!Number.isInteger(v) || v <= 0) return this.reject(userId, msg, "invalid eventIntervalMin");
+      next.eventIntervalMin = v;
+    }
+    if ("eventIntervalMax" in msg) {
+      const v = Number(msg["eventIntervalMax"]);
+      if (!Number.isInteger(v) || v <= 0) return this.reject(userId, msg, "invalid eventIntervalMax");
+      next.eventIntervalMax = v;
+    }
+    if ("endGameGraceSec" in msg) {
+      const v = Number(msg["endGameGraceSec"]);
+      if (!Number.isInteger(v) || v < 0) return this.reject(userId, msg, "invalid endGameGraceSec");
+      next.endGameGraceSec = v;
+    }
+    if ("codeMode" in msg) {
+      const v = String(msg["codeMode"] ?? "") as CodeMode;
+      if (v !== "alpha" && v !== "random") return this.reject(userId, msg, "invalid codeMode");
+      next.codeMode = v;
+    }
+    if ("enforceCaseByRole" in msg) {
+      next.enforceCaseByRole = !!msg["enforceCaseByRole"];
+    }
+
+    if (next.eventIntervalMin > next.eventIntervalMax) {
+      return this.reject(userId, msg, "eventIntervalMin must be <= eventIntervalMax");
+    }
+    const deckSize = next.cardValues.length * next.copiesPerValue;
+    const cardsInPlay = next.informedSeats + next.publicSlots;
+    if (cardsInPlay > deckSize) {
+      return this.reject(userId, msg, `cardsInPlay (${cardsInPlay}) exceeds deckSize (${deckSize})`);
+    }
+
+    const codeRulesChanged =
+      next.codeMode !== cur.codeMode || next.enforceCaseByRole !== cur.enforceCaseByRole;
+    this.state.options = next;
+    if (codeRulesChanged) {
+      this.state.codeBook = this.generateInitialCodeBook();
+    }
     this.broadcastSnapshot();
   }
 
@@ -1514,12 +1597,12 @@ let cachedSharedContracts: SharedContractEntry[] | null = null;
 function loadSharedContract(refId: string): SharedContractEntry | null {
   if (cachedSharedContracts === null) {
     try {
-      // Lazily; reads at most once per process.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const fs = require("node:fs") as typeof import("node:fs");
-      const data = JSON.parse(fs.readFileSync(SHARED_CONTRACTS_PATH, "utf8"));
+      const data = JSON.parse(readFileSync(SHARED_CONTRACTS_PATH, "utf8"));
       cachedSharedContracts = (data?.entries ?? []) as SharedContractEntry[];
-    } catch {
+    } catch (err) {
+      console.warn(
+        `[mockery] failed to load shared contracts: ${(err as Error).message}`,
+      );
       cachedSharedContracts = [];
     }
   }
