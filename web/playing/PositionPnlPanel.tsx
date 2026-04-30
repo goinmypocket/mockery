@@ -57,31 +57,37 @@ export function PositionPnlPanel({ snapshot }: Props): ReactNode {
             <th>Code</th>
             <th>Role</th>
             {contracts.map((c) => <th key={c.id}>{c.name}</th>)}
-            {tab === "pnl" ? <th>Total</th> : <th>|net|</th>}
+            {tab === "pnl" ? <th>Total</th> : null}
           </tr>
         </thead>
         <tbody>
           {visibleParticipants.map((p) => {
             const positions = snapshot.positionsByCode[p.code] ?? {};
+            const contractPnl = snapshot.contractPnlByCode[p.code] ?? {};
             const pnl = snapshot.pnlByCode[p.code] ?? 0;
-            const netAbs = Object.values(positions).reduce((acc, v) => acc + Math.abs(v), 0);
             return (
               <tr key={p.code}>
                 <td className="mk-code">{p.code}{p.role === "bot" ? " 🤖" : ""}</td>
                 <td className="mk-muted">{p.role}</td>
                 {contracts.map((c) => {
-                  const v = positions[c.id] ?? 0;
                   if (tab === "pnl") {
-                    const mark = snapshot.marksByContract[c.id] ?? 0;
-                    return <td key={c.id} className="mk-num">{v === 0 ? "—" : (v * mark).toFixed(0)}</td>;
+                    const cp = contractPnl[c.id] ?? 0;
+                    return (
+                      <td key={c.id} className={`mk-num ${cp < 0 ? "mk-neg" : ""}`}>
+                        {cp === 0 ? "—" : cp.toFixed(2)}
+                      </td>
+                    );
                   }
+                  const v = positions[c.id] ?? 0;
                   return (
                     <td key={c.id} className={`mk-num ${v < 0 ? "mk-neg" : ""}`}>
                       {v === 0 ? "—" : v}
                     </td>
                   );
                 })}
-                <td className="mk-num">{tab === "pnl" ? pnl.toFixed(2) : netAbs}</td>
+                {tab === "pnl" ? (
+                  <td className={`mk-num ${pnl < 0 ? "mk-neg" : ""}`}>{pnl.toFixed(2)}</td>
+                ) : null}
               </tr>
             );
           })}

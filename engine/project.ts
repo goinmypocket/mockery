@@ -54,6 +54,9 @@ export interface ProjectedSnapshot {
 
   readonly positionsByCode: Readonly<Record<ParticipantCode, Record<ContractId, number>>>;
   readonly pnlByCode: Readonly<Record<ParticipantCode, number>>;
+  /** Per-contract MTM (or settled) PnL: contractCashFlow + position *
+   *  mark/settlement. Sums across contracts equal `pnlByCode[code]`. */
+  readonly contractPnlByCode: Readonly<Record<ParticipantCode, Record<ContractId, number>>>;
   readonly marksByContract: Readonly<Record<ContractId, number>>;
 
   readonly settlements: Readonly<Record<ContractId, number>> | null;
@@ -199,10 +202,28 @@ export function project(args: ProjectArgs): ProjectedSnapshot {
   // Positions/PnL/marks keyed by code.
   const positionsByCode: Record<ParticipantCode, Record<ContractId, number>> = {};
   const pnlByCode: Record<ParticipantCode, number> = {};
+  const contractPnlByCode: Record<ParticipantCode, Record<ContractId, number>> = {};
   const marksByContract: Record<ContractId, number> = {};
   for (const cid of Object.keys(s.books) as ContractId[]) {
     marksByContract[cid] = markPrice(s, cid);
   }
+
+  // Reconstruct per-(participant, contract) cash flow from the trade
+  // log so we can split PnL by contract. State.cash is global (not
+  // per-contract), so we walk trades. Pre-buys subtract; sells add.
+  const cashFlowByKeyContract: Record<string, Record<ContractId, number>> = {};
+  const bump = (key: string, cid: ContractId, delta: number): void => {
+    if (!cashFlowByKeyContract[key]) cashFlowByKeyContract[key] = {};
+    cashFlowByKeyContract[key][cid] = (cashFlowByKeyContract[key][cid] ?? 0) + delta;
+  };
+  for (const t of s.trades) {
+    const buyerKey = participantKey(t.buyer);
+    const sellerKey = participantKey(t.seller);
+    const cash = t.price * t.qty;
+    bump(buyerKey, t.contractId, -cash);
+    bump(sellerKey, t.contractId, +cash);
+  }
+
   const allKeys = new Set<string>([
     ...Object.keys(s.positions),
     ...Object.keys(s.cash),
@@ -218,6 +239,24 @@ export function project(args: ProjectArgs): ProjectedSnapshot {
     } else {
       pnlByCode[code] = mtmPnl(s, keyToParticipant(key));
     }
+
+    // Per-contract PnL = cashFlow[c] + position[c] * (settle|mark[c]).
+    const flows = cashFlowByKeyContract[key] ?? {};
+    const perContract: Record<ContractId, number> = {};
+    const contractIds = new Set<ContractId>([
+      ...(Object.keys(flows) as ContractId[]),
+      ...(Object.keys(pos) as ContractId[]),
+      ...(Object.keys(marksByContract) as ContractId[]),
+    ]);
+    for (const cid of contractIds) {
+      const cashFlow = flows[cid] ?? 0;
+      const position = pos[cid] ?? 0;
+      const valuePerUnit = s.status === "finished" && s.settlements
+        ? (s.settlements[cid] ?? 0)
+        : (marksByContract[cid] ?? 0);
+      perContract[cid] = cashFlow + position * valuePerUnit;
+    }
+    contractPnlByCode[code] = perContract;
   }
 
   // Viewer's own open orders.
@@ -249,6 +288,7 @@ export function project(args: ProjectArgs): ProjectedSnapshot {
     myOpenOrders,
     positionsByCode,
     pnlByCode,
+    contractPnlByCode,
     marksByContract,
     settlements: s.settlements,
   };
