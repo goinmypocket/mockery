@@ -2,7 +2,7 @@
 // TnsPanel — time and sales. Most recent first. Phase-coloured rows.
 // =============================================================================
 
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import type { ProjectedSnapshot } from "../../engine/project";
 
 interface Props {
@@ -69,21 +69,35 @@ export function TnsPanel({ snapshot }: Props): ReactNode {
           </tr>
         </thead>
         <tbody>
-          {rows.map((t) => {
+          {rows.map((t, i) => {
             const cidx = contractIndex[t.contractId] ?? 0;
+            // Insert a divider BETWEEN rows when phase differs from
+            // the newer (i-1) neighbour. Rows are newest-first, so the
+            // divider visually separates the newer phase block (above)
+            // from the older block (below) and labels the boundary
+            // itself with the phase that just began.
+            const newer = i > 0 ? rows[i - 1] : null;
+            const divider =
+              newer && newer.phase !== t.phase ? (
+                <tr className="mk-tns__divider">
+                  <td colSpan={7}>Phase {newer.phase}</td>
+                </tr>
+              ) : null;
             return (
-              <tr
-                key={t.id}
-                className={`mk-tns__row mk-phase-${t.phase % 6} mk-contract-${cidx % 6}`}
-              >
-                <td>{formatTime(t.ts)}</td>
-                <td className="mk-tns__phase">{t.phase}</td>
-                <td className={`mk-code mk-tns__buyer ${t.aggressor === "buyer" ? "mk-tns__aggressor" : ""}`}>{t.buyerCode}</td>
-                <td className={`mk-code mk-tns__seller ${t.aggressor === "seller" ? "mk-tns__aggressor" : ""}`}>{t.sellerCode}</td>
-                <td>{contractName(t.contractId)}</td>
-                <td className="mk-num">{t.price}</td>
-                <td className="mk-num">{t.qty}</td>
-              </tr>
+              <Fragment key={t.id}>
+                {divider}
+                <tr
+                  className={`mk-tns__row mk-phase-${t.phase % 6} mk-contract-${cidx % 6}`}
+                >
+                  <td>{formatTime(t.ts)}</td>
+                  <td className="mk-tns__phase">{t.phase}</td>
+                  <td className={`mk-code mk-tns__buyer ${t.aggressor === "buyer" ? "mk-tns__aggressor" : ""}`}>{t.buyerCode}</td>
+                  <td className={`mk-code mk-tns__seller ${t.aggressor === "seller" ? "mk-tns__aggressor" : ""}`}>{t.sellerCode}</td>
+                  <td>{contractName(t.contractId)}</td>
+                  <td className="mk-num">{t.price}</td>
+                  <td className="mk-num">{t.qty}</td>
+                </tr>
+              </Fragment>
             );
           })}
           {rows.length === 0 ? (

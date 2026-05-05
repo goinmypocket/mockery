@@ -391,6 +391,22 @@
   color: var(--mk-text); padding: 4px 8px; border-radius: 4px;
 }
 .mk-tns__row td { padding: 4px 10px; font-size: 0.9em; }
+.mk-tns__divider td {
+  /* Section gap between consecutive phases. Rows are newest-first, so
+   * the divider labels the boundary itself with the phase that just
+   * began (the newer block above). Dashed borders keep it distinct
+   * from the per-row backgrounds without competing with them. */
+  text-align: center;
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mk-muted);
+  padding: 4px 10px;
+  border-top: 1px dashed var(--mk-border);
+  border-bottom: 1px dashed var(--mk-border);
+  background: var(--mk-panel);
+}
 .mk-tns__phase { color: var(--mk-muted); width: 30px; text-align: center; }
 .mk-tns__buyer { color: var(--mk-bid); }
 .mk-tns__seller { color: var(--mk-offer); }

@@ -184,8 +184,10 @@ export function project(args: ProjectArgs): ProjectedSnapshot {
     };
   }
 
-  // Recent trades (last N).
-  const tail = args.tradeTail ?? 100;
+  // Recent trades — by default ship the entire trade log so the TnS
+  // panel survives page refreshes. Callers can still pass a smaller
+  // `tradeTail` for bandwidth-sensitive paths (e.g. bot snapshots).
+  const tail = args.tradeTail ?? s.trades.length;
   const recent = s.trades.slice(-tail).map<ProjectedTrade>((t) => ({
     id: t.id as unknown as string,
     ts: t.ts,
