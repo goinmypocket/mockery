@@ -29,6 +29,7 @@ function mkState(args: { informedSeats: number; publicSlots: number }): GameStat
   });
   s.status = "playing";
   s.informedCards = new Array(args.informedSeats).fill(0).map((_, i) => i + 1);
+  s.informedCardOrigin = new Array(args.informedSeats).fill(0).map((_, i) => i);
   s.publicCards = new Array(args.publicSlots).fill(0).map((_, i) => 100 + i);
   s.publicRevealed = new Array(args.publicSlots).fill(false);
   return s;
@@ -38,19 +39,36 @@ describe("events", () => {
   it("rotateInformed passes each card to the next seat", () => {
     const s = mkState({ informedSeats: 4, publicSlots: 0 });
     expect(s.informedCards).toEqual([1, 2, 3, 4]);
+    expect(s.informedCardOrigin).toEqual([0, 1, 2, 3]);
     rotateInformed(s);
     expect(s.informedCards).toEqual([4, 1, 2, 3]);   // each card shifted right
+    expect(s.informedCardOrigin).toEqual([3, 0, 1, 2]); // origin shifts the same way
     expect(s.phase).toBe(1);
   });
 
   it("rotateInformed wraps around", () => {
     const s = mkState({ informedSeats: 3, publicSlots: 0 });
     s.informedCards = [10, 20, 30];
+    s.informedCardOrigin = [0, 1, 2];
     rotateInformed(s);
     rotateInformed(s);
     rotateInformed(s);
     expect(s.informedCards).toEqual([10, 20, 30]);
+    expect(s.informedCardOrigin).toEqual([0, 1, 2]);
     expect(s.phase).toBe(3);
+  });
+
+  it("rotateInformed keeps each card paired with its original seat", () => {
+    const s = mkState({ informedSeats: 4, publicSlots: 0 });
+    // After every rotation, value-and-origin travel together: at seat
+    // i the value originally dealt to seat informedCardOrigin[i].
+    const dealt = s.informedCards.slice();
+    for (let r = 0; r < 8; r++) {
+      for (let i = 0; i < s.informedCards.length; i++) {
+        expect(s.informedCards[i]).toBe(dealt[s.informedCardOrigin[i]!]!);
+      }
+      rotateInformed(s);
+    }
   });
 
   it("revealPublic with null picks lowest still-hidden slot", () => {

@@ -2,7 +2,8 @@
 // PlayingScreen — the live trading workspace.
 //
 // Top bar (phase + countdown + layout menu) → docking workspace via
-// rc-dock → sticky Order Placer at the bottom.
+// rc-dock. The Order Placer is a regular dockable module now, so users
+// can position it wherever they want in the workspace.
 // Spec: docs/game-ui-spec.md §1.
 // =============================================================================
 
@@ -10,7 +11,6 @@ import { useCallback, useState, type ReactNode } from "react";
 import type { ProjectedSnapshot } from "../../engine/project";
 import type { TableId, UserId } from "../../shared/ids";
 import { TopBar } from "../components/TopBar";
-import { OrderPlacer } from "../playing/OrderPlacer";
 import { RejectionChip } from "../components/RejectionChip";
 import { Workspace } from "../playing/Workspace";
 import {
@@ -71,10 +71,6 @@ export function PlayingScreen(props: Props): ReactNode {
           globalFont={globalFont}
         />
       </div>
-
-      <footer className="mk-playing__placer">
-        <OrderPlacer snapshot={snapshot} send={send} />
-      </footer>
     </div>
   );
 }

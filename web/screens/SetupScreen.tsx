@@ -57,6 +57,11 @@ function HostSetup({
       </section>
 
       <section className="mk-setup__section">
+        <h2>Seats &amp; roles</h2>
+        <SeatRoleEditor snapshot={snapshot} send={send} />
+      </section>
+
+      <section className="mk-setup__section">
         <h2>Contracts</h2>
         <ContractsEditor snapshot={snapshot} send={send} library={library} />
       </section>
@@ -123,6 +128,72 @@ function NonHostSetup({ snapshot }: { snapshot: ProjectedSnapshot }): ReactNode 
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Per-seat list with up/down arrows that swap adjacent seats. Since
+ *  the engine assigns roles by seat index (first `informedSeats` are
+ *  informed; the rest are uninformed), reordering seats across the
+ *  informed/uninformed boundary is how the host changes a player's
+ *  role before Start Trading. */
+function SeatRoleEditor({
+  snapshot, send,
+}: {
+  snapshot: ProjectedSnapshot;
+  send(msg: unknown): void;
+}): ReactNode {
+  const informedCount = snapshot.options.informedSeats;
+  const total = informedCount + snapshot.options.uninformedSeats;
+  // Walk seats in seat order via the participants array (which is
+  // built in seat order in project.ts and exposes only player rows
+  // here — bots get appended after, and we filter them out).
+  const playerRows = snapshot.participants.filter((p) => p.role === "informed" || p.role === "uninformed");
+  const swap = (i: number, j: number): void => {
+    if (i < 0 || j < 0 || i >= total || j >= total || i === j) return;
+    send({ type: "SETUP_SWAP_SEATS", i, j });
+  };
+  return (
+    <ul className="mk-seats">
+      {playerRows.map((p, i) => {
+        const role = i < informedCount ? "informed" : "uninformed";
+        const label = p.displayName ?? `Seat ${i + 1}`;
+        return (
+          <li key={p.code} className="mk-seats__row">
+            <span className={`mk-seats__role mk-seats__role--${role}`}>{role}</span>
+            <span className="mk-seats__name">{label}</span>
+            <span className="mk-code mk-seats__code">{p.code}</span>
+            <span className="mk-seats__actions">
+              <button
+                type="button" className="mk-button mk-button--small"
+                disabled={i === 0}
+                title="Move up (swap with seat above)"
+                onClick={() => swap(i, i - 1)}
+              >↑</button>
+              <button
+                type="button" className="mk-button mk-button--small"
+                disabled={i === playerRows.length - 1}
+                title="Move down (swap with seat below)"
+                onClick={() => swap(i, i + 1)}
+              >↓</button>
+              {role === "uninformed" && informedCount > 0 ? (
+                <button
+                  type="button" className="mk-button mk-button--small"
+                  title="Make informed (swap with last informed seat)"
+                  onClick={() => swap(i, informedCount - 1)}
+                >→ informed</button>
+              ) : null}
+              {role === "informed" && informedCount < playerRows.length ? (
+                <button
+                  type="button" className="mk-button mk-button--small"
+                  title="Make uninformed (swap with first uninformed seat)"
+                  onClick={() => swap(i, informedCount)}
+                >→ uninformed</button>
+              ) : null}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

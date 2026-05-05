@@ -1,10 +1,6 @@
 // =============================================================================
 // Workspace — wraps rc-dock with a layout library menu and persistence.
 // Replaces PlayingScreen's CSS grid. Spec: docs/game-ui-spec.md §1.
-//
-// The Order Placer is intentionally OUTSIDE the dock (sticky bottom bar);
-// the spec calls it "always visible" and a docked tab would let users
-// hide it accidentally.
 // =============================================================================
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";

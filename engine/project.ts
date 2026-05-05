@@ -45,6 +45,14 @@ export interface ProjectedSnapshot {
   readonly identityReveal: IdentityReveal;
 
   readonly publicCards: ReadonlyArray<number | null>;
+  /** Per-original-seat informed card values, with redaction. Index `j`
+   *  is the value of the card originally dealt to seat `j` (it may now
+   *  be held by a different seat after rotations — that doesn't change
+   *  the index). A slot is non-null if the viewer is allowed to see
+   *  the value: during play, only the viewer's own currently-held
+   *  card is visible (under its original holder's banner); at game
+   *  end, every slot is revealed for the post-mortem. */
+  readonly informedRevealedCards: ReadonlyArray<number | null>;
   readonly participants: readonly ProjectedParticipant[];
   readonly botEntities: readonly BotEntity[];
 
@@ -67,6 +75,13 @@ export interface ProjectedViewer {
   readonly role: ViewerRole;
   readonly seatIndex: number | null;
   readonly myCard: number | null;          // own private card if informed
+  /** Seat index of the player who was *originally dealt* the card the
+   *  viewer is currently holding. Equals `seatIndex` initially and
+   *  immediately after a full rotation cycle; otherwise points to
+   *  whichever seat first received this card in the deal. The UI uses
+   *  this to display the value under the original holder's banner so
+   *  every card stays anchored to its initial holder's name. */
+  readonly myCardOriginalSeat: number | null;
   readonly myCode: ParticipantCode | null; // their own code; null for non-participating spectators
 }
 
@@ -166,6 +181,24 @@ export function project(args: ProjectArgs): ProjectedSnapshot {
   const publicCards: (number | null)[] = s.publicCards.map((v, i) =>
     s.publicRevealed[i] ? v : null,
   );
+
+  // Informed cards, indexed by *original* seat (the player who was
+  // first dealt the card). At finish every slot is revealed; during
+  // play only the viewer's own currently-held card is visible, shown
+  // under its original-holder's banner.
+  const informedRevealedCards: (number | null)[] = new Array(s.options.informedSeats).fill(null);
+  if (s.status === "finished") {
+    for (let i = 0; i < s.informedCards.length; i++) {
+      const j = s.informedCardOrigin[i] ?? i;
+      informedRevealedCards[j] = s.informedCards[i]!;
+    }
+  } else if (
+    viewer.role === "informed"
+    && viewer.myCard !== null
+    && viewer.myCardOriginalSeat !== null
+  ) {
+    informedRevealedCards[viewer.myCardOriginalSeat] = viewer.myCard;
+  }
 
   // Books with codes.
   const books: Record<ContractId, ProjectedBook> = {};
@@ -283,6 +316,7 @@ export function project(args: ProjectArgs): ProjectedSnapshot {
     graceTimerMs: args.graceTimerMs,
     identityReveal: s.options.identityReveal,
     publicCards,
+    informedRevealedCards,
     participants,
     botEntities: s.botEntities,
     books,
@@ -314,12 +348,17 @@ function computeViewer(s: GameState, viewerUserId: UserId): ProjectedViewer {
     role === "informed" && s.informedCards.length > seatIndex
       ? s.informedCards[seatIndex]!
       : null;
+  const myCardOriginalSeat =
+    role === "informed" && s.informedCardOrigin.length > seatIndex
+      ? s.informedCardOrigin[seatIndex]!
+      : null;
   const myKey = participantKey({ kind: "player", userId: viewerUserId });
   return {
     userId: viewerUserId,
     role,
     seatIndex: seatIndex >= 0 ? seatIndex : null,
     myCard,
+    myCardOriginalSeat,
     myCode: s.codeBook[myKey] ?? null,
   };
 }

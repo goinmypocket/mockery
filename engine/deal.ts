@@ -22,8 +22,10 @@ export function deal(state: GameState): void {
   }
 
   state.informedCards = new Array<number>(state.options.informedSeats);
+  state.informedCardOrigin = new Array<number>(state.options.informedSeats);
   for (let i = 0; i < state.options.informedSeats; i++) {
     state.informedCards[i] = deck[i]!;
+    state.informedCardOrigin[i] = i;
   }
   state.publicCards = new Array<number>(state.options.publicSlots);
   state.publicRevealed = new Array<boolean>(state.options.publicSlots).fill(false);

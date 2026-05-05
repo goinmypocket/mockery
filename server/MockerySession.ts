@@ -118,6 +118,12 @@ export interface MockerySave {
   // Full engine snapshot (only meaningful when status !== "lobby"):
   readonly rngState?: readonly number[];
   readonly informedCards?: readonly number[];
+  /** Parallel to `informedCards`. Optional for back-compat with v2
+   *  saves written before card-origin tracking landed; on hydrate we
+   *  default to the identity permutation (i.e. assume no rotations
+   *  have happened, which is wrong for in-flight games but the only
+   *  reasonable inference without further state). */
+  readonly informedCardOrigin?: readonly number[];
   readonly publicCards?: readonly number[];
   readonly publicRevealed?: readonly boolean[];
   readonly phase?: number;
@@ -409,6 +415,7 @@ export class MockerySession implements GameSession<MockerySave> {
         case "SETUP_SET_GAME_OPTIONS":     return this.onSetupSetGameOptions(userId, msg);
         case "SETUP_SET_CODE":             return this.onSetupSetCode(userId, msg);
         case "SETUP_RESHUFFLE_CODES":      return this.onSetupReshuffleCodes(userId);
+        case "SETUP_SWAP_SEATS":           return this.onSetupSwapSeats(userId, msg);
         case "SETUP_SET_IDENTITY_REVEAL":  return this.onSetupSetIdentityReveal(userId, msg);
         case "SETUP_QUEUE_APPEND":         return this.onQueueAppend(userId, msg, /* setup */ true);
         case "SETUP_QUEUE_INSERT":         return this.onQueueInsert(userId, msg, /* setup */ true);
@@ -707,6 +714,32 @@ export class MockerySession implements GameSession<MockerySave> {
   private onSetupReshuffleCodes(userId: UserId): void {
     if (!this.requireSetup(userId, "SETUP_RESHUFFLE_CODES")) return;
     this.state.codeBook = this.generateInitialCodeBook();
+    this.broadcastSnapshot();
+  }
+
+  /** Swap two seats in the seat array (and their display names). The
+   *  codeBook is keyed by participantKey, not seat index, so each
+   *  player's code follows them — only their *role* changes when the
+   *  swap crosses the informed/uninformed boundary.
+   *
+   *  Setup-only: in playing/finished phases the seat order is frozen
+   *  (rotation already used the seat indices to deal cards). */
+  private onSetupSwapSeats(userId: UserId, msg: Record<string, unknown>): void {
+    if (!this.requireSetup(userId, msg)) return;
+    const i = Number(msg["i"]);
+    const j = Number(msg["j"]);
+    const required = this.state.options.informedSeats + this.state.options.uninformedSeats;
+    if (!Number.isInteger(i) || !Number.isInteger(j)) {
+      return this.reject(userId, msg, "i and j must be integer seat indices");
+    }
+    if (i === j) return; // no-op
+    if (i < 0 || j < 0 || i >= required || j >= required) {
+      return this.reject(userId, msg, "seat index out of range");
+    }
+    const seats = this.state.seats;
+    [seats[i], seats[j]] = [seats[j]!, seats[i]!];
+    [this.seatDisplayNames[i], this.seatDisplayNames[j]] =
+      [this.seatDisplayNames[j]!, this.seatDisplayNames[i]!];
     this.broadcastSnapshot();
   }
 
@@ -1254,6 +1287,7 @@ export class MockerySession implements GameSession<MockerySave> {
       status,
       rngState: getRngState(this.state.rng),
       informedCards: this.state.informedCards.slice(),
+      informedCardOrigin: this.state.informedCardOrigin.slice(),
       publicCards: this.state.publicCards.slice(),
       publicRevealed: this.state.publicRevealed.slice(),
       phase: this.state.phase,
@@ -1302,6 +1336,9 @@ export class MockerySession implements GameSession<MockerySave> {
     if (blob.rngState) this.state.rng = rngFromState([...blob.rngState]);
     this.state.status = blob.status;
     this.state.informedCards = blob.informedCards ? [...blob.informedCards] : [];
+    this.state.informedCardOrigin = blob.informedCardOrigin
+      ? [...blob.informedCardOrigin]
+      : this.state.informedCards.map((_, i) => i);
     this.state.publicCards = blob.publicCards ? [...blob.publicCards] : [];
     this.state.publicRevealed = blob.publicRevealed ? [...blob.publicRevealed] : [];
     this.state.phase = blob.phase ?? 0;

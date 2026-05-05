@@ -13,6 +13,12 @@
 import type { LayoutBase } from "rc-dock";
 import type { ModuleId } from "../modules";
 
+/** Module ids that, if missing from a saved layout, should be added on
+ *  load. Newly-introduced modules go here so existing saved layouts
+ *  pick them up automatically without forcing the user to reset. The
+ *  injection appends the id as a sibling tab in the dockbox root. */
+const REQUIRED_MODULE_IDS: readonly ModuleId[] = ["placer"];
+
 export interface LayoutLibrary {
   /** Name of the layout used when a new table opens, or null to use the
    *  built-in default. */
@@ -30,9 +36,9 @@ export const BUILTIN_DEFAULT_NAME = "Built-in default";
  *    ┌──────────┬──────────────────┬───────────┐
  *    │ Cards    │ Order Book       │ Positions │
  *    │          ├──────────────────┤ & PnL     │
- *    │          │ TNS              │           │
- *    │          │                  ├───────────┤
- *    │ My Orders│                  │ Host*     │
+ *    │ My Orders│ TNS              ├───────────┤
+ *    │          │                  │ Host*     │
+ *    │ Placer   │                  │           │
  *    └──────────┴──────────────────┴───────────┘
  *
  *    *Host panel only included for the host viewer.
@@ -52,6 +58,7 @@ export function builtinDefaultLayout(opts: { isHost: boolean }): LayoutBase {
           children: [
             { tabs: [{ id: "cards" }] },
             { tabs: [{ id: "myOrders" }] },
+            { tabs: [{ id: "placer" }] },
           ],
         },
         {
@@ -113,9 +120,56 @@ export function loadActiveLayout(userId: string, tableId: string): LayoutBase | 
   if (typeof localStorage === "undefined") return null;
   try {
     const raw = localStorage.getItem(activeKey(userId, tableId));
-    return raw ? (JSON.parse(raw) as LayoutBase) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LayoutBase;
+    return ensureRequiredModules(parsed);
   } catch {
     return null;
+  }
+}
+
+/** Walk a saved layout and append any `REQUIRED_MODULE_IDS` whose tab
+ *  isn't already present anywhere in the tree. Each missing module is
+ *  added as a new bottom-pinned panel in the dockbox so it's
+ *  immediately visible. Layouts already containing the module are
+ *  returned unchanged.
+ *
+ *  This lets us roll out new modules without forcing a hard reset for
+ *  users with old saved layouts. */
+export function ensureRequiredModules(layout: LayoutBase): LayoutBase {
+  const present = new Set<string>();
+  collectTabIds(layout.dockbox as unknown, present);
+  const missing = REQUIRED_MODULE_IDS.filter((id) => !present.has(id));
+  if (missing.length === 0) return layout;
+  // Append a vertical row of single-tab panels for the missing modules.
+  // rc-dock dockbox root must be horizontal/vertical; preserve whatever
+  // mode it has by wrapping in a vertical box if needed.
+  const dockbox = layout.dockbox as unknown as { mode?: string; children?: unknown[] };
+  const newPanels = missing.map((id) => ({ tabs: [{ id }] }));
+  let nextDockbox: unknown;
+  if (dockbox.mode === "vertical" && Array.isArray(dockbox.children)) {
+    nextDockbox = { ...dockbox, children: [...dockbox.children, ...newPanels] };
+  } else {
+    // Wrap the existing dockbox in a vertical box and append the new
+    // panel(s) below it.
+    nextDockbox = {
+      mode: "vertical",
+      children: [dockbox, ...newPanels],
+    };
+  }
+  return { ...layout, dockbox: nextDockbox as LayoutBase["dockbox"] };
+}
+
+function collectTabIds(node: unknown, out: Set<string>): void {
+  if (!node || typeof node !== "object") return;
+  const n = node as { tabs?: Array<{ id?: unknown }>; children?: unknown[] };
+  if (n.tabs) {
+    for (const t of n.tabs) {
+      if (typeof t.id === "string") out.add(t.id);
+    }
+  }
+  if (n.children) {
+    for (const child of n.children) collectTabIds(child, out);
   }
 }
 

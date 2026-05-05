@@ -42,6 +42,16 @@ export interface GameState {
    *  card) are baked into these values. */
   informedCards: number[];
 
+  /** Parallel to `informedCards`. `informedCardOrigin[i]` is the seat
+   *  index that was originally dealt the card currently held by seat
+   *  `i`. Initialized as the identity permutation [0..n-1] at deal
+   *  time, then rotated together with `informedCards`. The UI uses it
+   *  to display each card under its original holder's banner — i.e.
+   *  the card a player is dealt stays attached to *their* name for
+   *  the rest of the game, even after rotations move it to another
+   *  seat. */
+  informedCardOrigin: number[];
+
   /** Public card slot values. Always populated from setup onwards;
    *  `publicRevealed[i]` says whether slot i has been revealed. Hidden
    *  values must be redacted at projection time. */
@@ -117,6 +127,7 @@ export function createInitialState(args: {
     hostUserId: args.hostUserId,
     seats: args.seats.slice(),
     informedCards: [],
+    informedCardOrigin: [],
     publicCards: [],
     publicRevealed: [],
     phase: 0,

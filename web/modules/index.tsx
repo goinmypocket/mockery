@@ -16,6 +16,7 @@ import { TnsPanel } from "../playing/TnsPanel";
 import { PositionPnlPanel } from "../playing/PositionPnlPanel";
 import { HostControlsPanel } from "../playing/HostControlsPanel";
 import { MyOrdersPanel } from "../playing/MyOrdersPanel";
+import { OrderPlacer } from "../playing/OrderPlacer";
 
 export type ModuleId =
   | "cards"
@@ -23,6 +24,7 @@ export type ModuleId =
   | "tns"
   | "positions"
   | "myOrders"
+  | "placer"
   | "host";
 
 export interface ModuleContext {
@@ -65,6 +67,11 @@ export const MODULES: Readonly<Record<ModuleId, ModuleDef>> = {
     id: "myOrders",
     title: "My Orders",
     render: ({ snapshot, send }) => <MyOrdersPanel snapshot={snapshot} send={send} />,
+  },
+  placer: {
+    id: "placer",
+    title: "Order Placer",
+    render: ({ snapshot, send }) => <OrderPlacer snapshot={snapshot} send={send} />,
   },
   host: {
     id: "host",

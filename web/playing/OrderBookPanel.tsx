@@ -1,12 +1,15 @@
 // =============================================================================
 // OrderBookPanel — one row per contract, laid out as a fixed-column
 // table. Click a cell to populate the Order Placer; Hit/Lift buttons
-// fire IOC market orders against best bid / best offer.
+// fire IOC market orders against best bid / best offer. Levels that
+// contain the viewer's own resting orders show a small × that
+// cancels them.
 // =============================================================================
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ProjectedSnapshot, ProjectedBook, ProjectedLevel } from "../../engine/project";
-import type { ContractId } from "../../shared/ids";
+import type { ContractId, OrderId } from "../../shared/ids";
+import type { OrderSide } from "../../shared/types";
 import { setSelection } from "../workspaceStore";
 
 interface Props {
@@ -14,7 +17,28 @@ interface Props {
   send(msg: unknown): void;
 }
 
+/** Key derived from (contractId, side, price) so we can look up which
+ *  of the viewer's orders rest at any given level in the book. */
+type LevelKey = string;
+function levelKey(contractId: ContractId, side: OrderSide, price: number): LevelKey {
+  return `${contractId}|${side}|${price}`;
+}
+
 export function OrderBookPanel({ snapshot, send }: Props): ReactNode {
+  // Build a map from (contract, side, price) → list of viewer's order
+  // ids resting there, used to render an inline cancel control on
+  // levels the viewer is sitting on.
+  const myOrdersByLevel = useMemo(() => {
+    const map = new Map<LevelKey, OrderId[]>();
+    for (const o of snapshot.myOpenOrders) {
+      const k = levelKey(o.contractId, o.side, o.price);
+      const arr = map.get(k);
+      if (arr) arr.push(o.id);
+      else map.set(k, [o.id]);
+    }
+    return map;
+  }, [snapshot.myOpenOrders]);
+
   return (
     <table className="mk-book">
       <thead>
@@ -40,6 +64,7 @@ export function OrderBookPanel({ snapshot, send }: Props): ReactNode {
             contractId={c.id}
             name={c.name}
             book={snapshot.books[c.id]}
+            myOrdersByLevel={myOrdersByLevel}
             send={send}
           />
         ))}
@@ -49,11 +74,12 @@ export function OrderBookPanel({ snapshot, send }: Props): ReactNode {
 }
 
 function ContractRows({
-  contractId, name, book, send,
+  contractId, name, book, myOrdersByLevel, send,
 }: {
   contractId: ContractId;
   name: string;
   book: ProjectedBook | undefined;
+  myOrdersByLevel: ReadonlyMap<LevelKey, readonly OrderId[]>;
   send(msg: unknown): void;
 }): ReactNode {
   const [expanded, setExpanded] = useState(false);
@@ -77,6 +103,18 @@ function ContractRows({
   };
   const populateContract = (): void => {
     setSelection({ contractId });
+  };
+
+  // Cancel all of the viewer's orders resting at a given level.
+  const cancelMineAt = (side: OrderSide, price: number | undefined): void => {
+    if (price === undefined) return;
+    const ids = myOrdersByLevel.get(levelKey(contractId, side, price));
+    if (!ids || ids.length === 0) return;
+    for (const id of ids) send({ type: "CANCEL_ORDER", orderId: id });
+  };
+  const myAt = (side: OrderSide, price: number | undefined): readonly OrderId[] | undefined => {
+    if (price === undefined) return undefined;
+    return myOrdersByLevel.get(levelKey(contractId, side, price));
   };
 
   return (
@@ -122,6 +160,9 @@ function ContractRows({
           {bestBid && bestBid.parties.length > 1 ? (
             <span className="mk-muted"> +{bestBid.parties.length - 1}</span>
           ) : null}
+          {myAt("buy", bestBid?.price) ? (
+            <CancelMineBtn onClick={() => cancelMineAt("buy", bestBid?.price)} />
+          ) : null}
         </td>
         <td className="mk-num mk-book__cell" onClick={() => onBidClick(bestBid)}>
           {bestBid?.size ?? ""}
@@ -148,6 +189,9 @@ function ContractRows({
           {bestOffer?.parties[0]?.code ?? ""}
           {bestOffer && bestOffer.parties.length > 1 ? (
             <span className="mk-muted"> +{bestOffer.parties.length - 1}</span>
+          ) : null}
+          {myAt("sell", bestOffer?.price) ? (
+            <CancelMineBtn onClick={() => cancelMineAt("sell", bestOffer?.price)} />
           ) : null}
         </td>
 
@@ -183,6 +227,8 @@ function ContractRows({
           book={book}
           onBidClick={onBidClick}
           onOfferClick={onOfferClick}
+          myAt={myAt}
+          cancelMineAt={cancelMineAt}
         />
       ) : null}
     </>
@@ -190,19 +236,26 @@ function ContractRows({
 }
 
 function ExpandedLevels({
-  book, onBidClick, onOfferClick,
+  book, onBidClick, onOfferClick, myAt, cancelMineAt,
 }: {
   book: ProjectedBook | undefined;
   onBidClick(lvl: ProjectedLevel | undefined): void;
   onOfferClick(lvl: ProjectedLevel | undefined): void;
+  myAt(side: OrderSide, price: number | undefined): readonly OrderId[] | undefined;
+  cancelMineAt(side: OrderSide, price: number | undefined): void;
 }): ReactNode {
   if (!book) return null;
-  const rows = Math.max(book.bids.length, book.offers.length, 3);
+  // Skip the best bid/offer — they're already shown in the collapsed
+  // row. Start from the second-best level on each side.
+  const bids = book.bids.slice(1);
+  const offers = book.offers.slice(1);
+  const rows = Math.max(bids.length, offers.length);
+  if (rows === 0) return null;
   return (
     <>
       {Array.from({ length: rows }).map((_, i) => {
-        const b = book.bids[i];
-        const o = book.offers[i];
+        const b = bids[i];
+        const o = offers[i];
         return (
           <tr key={i} className="mk-book__row mk-book__row--level">
             <td />
@@ -210,6 +263,9 @@ function ExpandedLevels({
             <td />
             <td className="mk-code mk-book__cell" onClick={() => onBidClick(b)}>
               {b?.parties[0]?.code ?? ""}
+              {myAt("buy", b?.price) ? (
+                <CancelMineBtn onClick={() => cancelMineAt("buy", b?.price)} />
+              ) : null}
             </td>
             <td className="mk-num mk-book__cell" onClick={() => onBidClick(b)}>
               {b?.size ?? ""}
@@ -226,6 +282,9 @@ function ExpandedLevels({
             </td>
             <td className="mk-code mk-book__cell" onClick={() => onOfferClick(o)}>
               {o?.parties[0]?.code ?? ""}
+              {myAt("sell", o?.price) ? (
+                <CancelMineBtn onClick={() => cancelMineAt("sell", o?.price)} />
+              ) : null}
             </td>
             <td />
             <td />
@@ -233,5 +292,20 @@ function ExpandedLevels({
         );
       })}
     </>
+  );
+}
+
+/** Inline × that cancels the viewer's resting orders at a level.
+ *  Stops click-propagation so the surrounding cell's "populate placer"
+ *  click handler doesn't also fire. */
+function CancelMineBtn({ onClick }: { onClick(): void }): ReactNode {
+  return (
+    <button
+      type="button"
+      className="mk-book__cancel-mine"
+      title="Cancel my order(s) at this level"
+      aria-label="Cancel my order at this level"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+    >×</button>
   );
 }

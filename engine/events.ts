@@ -13,6 +13,12 @@ import type { GameState } from "./state";
  *  untouched.
  *
  *  Pass right means seat i's card goes to seat (i+1) mod N.
+ *
+ *  `informedCardOrigin` rotates in lockstep so each card remembers
+ *  which seat originally held it — the UI displays each card under
+ *  its original-holder's banner, so a card a player is dealt stays
+ *  attached to *their* name even after rotations move the value to
+ *  another seat.
  */
 export function rotateInformed(state: GameState): GameEvent {
   const n = state.options.informedSeats;
@@ -23,12 +29,16 @@ export function rotateInformed(state: GameState): GameEvent {
     return { type: "ROTATED" };
   }
   const cards = state.informedCards.slice(0, n);
-  const rotated = new Array<number>(n);
+  const origins = state.informedCardOrigin.slice(0, n);
+  const rotatedCards = new Array<number>(n);
+  const rotatedOrigins = new Array<number>(n);
   for (let i = 0; i < n; i++) {
-    rotated[(i + 1) % n] = cards[i]!;
+    rotatedCards[(i + 1) % n] = cards[i]!;
+    rotatedOrigins[(i + 1) % n] = origins[i]!;
   }
   for (let i = 0; i < n; i++) {
-    state.informedCards[i] = rotated[i]!;
+    state.informedCards[i] = rotatedCards[i]!;
+    state.informedCardOrigin[i] = rotatedOrigins[i]!;
   }
   state.phase++;
   return { type: "ROTATED" };
