@@ -52,6 +52,14 @@ export interface GameState {
    *  seat. */
   informedCardOrigin: number[];
 
+  /** Per-seat list of origin indices the seat's player has held at
+   *  some point during the game. A card "seen" at deal time or
+   *  received via rotation lands in here and stays — once revealed
+   *  to a player, the value remains visible to them in the UI even
+   *  after the card moves on. Indexed by seat index parallel to
+   *  `seats`; only filled for informed seats. */
+  seenInformedCardOrigins: number[][];
+
   /** Public card slot values. Always populated from setup onwards;
    *  `publicRevealed[i]` says whether slot i has been revealed. Hidden
    *  values must be redacted at projection time. */
@@ -128,6 +136,7 @@ export function createInitialState(args: {
     seats: args.seats.slice(),
     informedCards: [],
     informedCardOrigin: [],
+    seenInformedCardOrigins: [],
     publicCards: [],
     publicRevealed: [],
     phase: 0,

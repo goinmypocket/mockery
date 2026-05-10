@@ -183,21 +183,28 @@ export function project(args: ProjectArgs): ProjectedSnapshot {
   );
 
   // Informed cards, indexed by *original* seat (the player who was
-  // first dealt the card). At finish every slot is revealed; during
-  // play only the viewer's own currently-held card is visible, shown
-  // under its original-holder's banner.
+  // first dealt the card). Every value the viewer has held at some
+  // point during the game stays revealed under its original-holder's
+  // banner; at finish every slot is revealed. Build a value-by-origin
+  // lookup once so we can answer "what's the value of the card from
+  // origin j" without scanning informedCards each time.
+  const valueByOrigin: (number | null)[] = new Array(s.options.informedSeats).fill(null);
+  for (let i = 0; i < s.informedCards.length; i++) {
+    const j = s.informedCardOrigin[i] ?? i;
+    valueByOrigin[j] = s.informedCards[i]!;
+  }
   const informedRevealedCards: (number | null)[] = new Array(s.options.informedSeats).fill(null);
   if (s.status === "finished") {
-    for (let i = 0; i < s.informedCards.length; i++) {
-      const j = s.informedCardOrigin[i] ?? i;
-      informedRevealedCards[j] = s.informedCards[i]!;
+    for (let j = 0; j < s.options.informedSeats; j++) {
+      informedRevealedCards[j] = valueByOrigin[j] ?? null;
     }
-  } else if (
-    viewer.role === "informed"
-    && viewer.myCard !== null
-    && viewer.myCardOriginalSeat !== null
-  ) {
-    informedRevealedCards[viewer.myCardOriginalSeat] = viewer.myCard;
+  } else if (viewer.role === "informed" && viewer.seatIndex !== null) {
+    const seenOrigins = s.seenInformedCardOrigins[viewer.seatIndex] ?? [];
+    for (const j of seenOrigins) {
+      if (j >= 0 && j < informedRevealedCards.length) {
+        informedRevealedCards[j] = valueByOrigin[j] ?? null;
+      }
+    }
   }
 
   // Books with codes.

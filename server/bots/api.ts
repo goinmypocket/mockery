@@ -14,10 +14,18 @@ import type {
   ContractDef,
   EventQueueEntry,
   GameEvent,
+  OpResult,
   Order,
   OrderSide,
   ParticipantCode,
 } from "../../shared/types";
+import type { TimerHandle } from "../clock";
+
+/** Re-exported so bot authors can keep `import { ... } from "./api"`
+ *  without crossing into engine-internal modules. Single definition
+ *  lives in `../clock.ts`; this just propagates it through the bot
+ *  API surface. Same goes for OpResult below. */
+export type { OpResult, TimerHandle };
 
 // ---------------------------------------------------------------------------
 // Strategy interface
@@ -77,12 +85,6 @@ export interface PlaceArgs {
   readonly qty: number;
   readonly price: number;
 }
-
-export type OpResult<T> =
-  | (T extends void ? { ok: true } : { ok: true; value: T })
-  | { ok: false; reason: string };
-
-export type TimerHandle = symbol;
 
 // ---------------------------------------------------------------------------
 // MarketSnapshot — what the bot sees of the world

@@ -6,10 +6,10 @@
 // cancels them.
 // =============================================================================
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProjectedSnapshot, ProjectedBook, ProjectedLevel } from "../../engine/project";
 import type { ContractId, OrderId } from "../../shared/ids";
-import type { OrderSide } from "../../shared/types";
+import type { OrderSide, ParticipantCode } from "../../shared/types";
 import { setSelection } from "../workspaceStore";
 
 interface Props {
@@ -22,6 +22,44 @@ interface Props {
 type LevelKey = string;
 function levelKey(contractId: ContractId, side: OrderSide, price: number): LevelKey {
   return `${contractId}|${side}|${price}`;
+}
+
+/** Which party should headline a level. If the viewer is themselves
+ *  resting at this level, surface them first so they can see "I am
+ *  here" at a glance regardless of price-time priority. Otherwise
+ *  fall back to the natural first-in-list party. The bracketed +N
+ *  count reflects everyone *other than* the headliner. */
+function primaryParty(
+  parties: ProjectedLevel["parties"] | undefined,
+  myCode: ParticipantCode | null,
+): { code: ParticipantCode; isMine: boolean; others: number } | null {
+  if (!parties || parties.length === 0) return null;
+  const mine = myCode ? parties.find((p) => p.code === myCode) : undefined;
+  const head = mine ?? parties[0]!;
+  return {
+    code: head.code,
+    isMine: !!mine,
+    others: parties.length - 1,
+  };
+}
+
+/** Render a level's headline party + "(+N)" suffix. Centralises the
+ *  "highlight me" logic so every cell that surfaces parties uses the
+ *  same shape. */
+function PartyBadge({
+  parties, myCode,
+}: {
+  parties: ProjectedLevel["parties"] | undefined;
+  myCode: ParticipantCode | null;
+}): ReactNode {
+  const head = primaryParty(parties, myCode);
+  if (!head) return null;
+  return (
+    <>
+      <span className={head.isMine ? "mk-book__party--mine" : undefined}>{head.code}</span>
+      {head.others > 0 ? <span className="mk-muted"> (+{head.others})</span> : null}
+    </>
+  );
 }
 
 export function OrderBookPanel({ snapshot, send }: Props): ReactNode {
@@ -64,6 +102,7 @@ export function OrderBookPanel({ snapshot, send }: Props): ReactNode {
             contractId={c.id}
             name={c.name}
             book={snapshot.books[c.id]}
+            myCode={snapshot.viewer.myCode}
             myOrdersByLevel={myOrdersByLevel}
             send={send}
           />
@@ -73,16 +112,36 @@ export function OrderBookPanel({ snapshot, send }: Props): ReactNode {
   );
 }
 
+/** Depth restored when re-expanding after a manual collapse — keeps
+ *  the user's last-chosen "show N levels" preference instead of
+ *  always snapping back to a hardcoded default. */
+const DEFAULT_EXPAND_DEPTH = 5;
+
 function ContractRows({
-  contractId, name, book, myOrdersByLevel, send,
+  contractId, name, book, myCode, myOrdersByLevel, send,
 }: {
   contractId: ContractId;
   name: string;
   book: ProjectedBook | undefined;
+  myCode: ParticipantCode | null;
   myOrdersByLevel: ReadonlyMap<LevelKey, readonly OrderId[]>;
   send(msg: unknown): void;
 }): ReactNode {
-  const [expanded, setExpanded] = useState(false);
+  // `depth` is the number of levels past BBO to show. 0 == collapsed.
+  // `lastDepthRef` remembers the user's last positive choice so the
+  // chevron toggle restores it instead of always jumping to the
+  // default.
+  const [depth, setDepth] = useState(0);
+  const lastDepthRef = useRef(DEFAULT_EXPAND_DEPTH);
+  const expanded = depth > 0;
+  const toggleExpanded = (): void => {
+    if (depth > 0) { lastDepthRef.current = depth; setDepth(0); }
+    else { setDepth(lastDepthRef.current); }
+  };
+  const setDepthClamped = (raw: number): void => {
+    if (!Number.isFinite(raw)) return;
+    setDepth(Math.max(0, Math.floor(raw)));
+  };
   const [hitQty, setHitQty] = useState("1");
   const [liftQty, setLiftQty] = useState("1");
   const bestBid = book?.bids[0];
@@ -121,11 +180,23 @@ function ContractRows({
     <>
       <tr className="mk-book__row">
         <td className="mk-book__expand">
-          <button
-            type="button" className="mk-button mk-button--small"
-            onClick={() => setExpanded(!expanded)}
-            title={expanded ? "Collapse" : "Expand"}
-          >{expanded ? "▾" : "▸"}</button>
+          <div className="mk-book__expand-stack">
+            <button
+              type="button" className="mk-button mk-button--small"
+              onClick={toggleExpanded}
+              title={expanded ? "Collapse" : `Expand (show ${lastDepthRef.current} levels)`}
+            >{expanded ? "▾" : "▸"}</button>
+            {expanded ? (
+              <input
+                type="number" min={1}
+                className="mk-book__depth"
+                value={depth}
+                onChange={(e) => setDepthClamped(Number(e.target.value))}
+                title="Levels of depth to show beyond best bid/offer"
+                aria-label="Order book expansion depth"
+              />
+            ) : null}
+          </div>
         </td>
 
         {/* Hit qty + Hit button (left side, sell-aggressive) */}
@@ -156,10 +227,7 @@ function ContractRows({
 
         {/* Bid party / size / price */}
         <td className="mk-code mk-book__cell" onClick={() => onBidClick(bestBid)}>
-          {bestBid?.parties[0]?.code ?? ""}
-          {bestBid && bestBid.parties.length > 1 ? (
-            <span className="mk-muted"> +{bestBid.parties.length - 1}</span>
-          ) : null}
+          <PartyBadge parties={bestBid?.parties} myCode={myCode} />
           {myAt("buy", bestBid?.price) ? (
             <CancelMineBtn onClick={() => cancelMineAt("buy", bestBid?.price)} />
           ) : null}
@@ -186,10 +254,7 @@ function ContractRows({
           {bestOffer?.size ?? ""}
         </td>
         <td className="mk-code mk-book__cell" onClick={() => onOfferClick(bestOffer)}>
-          {bestOffer?.parties[0]?.code ?? ""}
-          {bestOffer && bestOffer.parties.length > 1 ? (
-            <span className="mk-muted"> +{bestOffer.parties.length - 1}</span>
-          ) : null}
+          <PartyBadge parties={bestOffer?.parties} myCode={myCode} />
           {myAt("sell", bestOffer?.price) ? (
             <CancelMineBtn onClick={() => cancelMineAt("sell", bestOffer?.price)} />
           ) : null}
@@ -225,6 +290,8 @@ function ContractRows({
       {expanded ? (
         <ExpandedLevels
           book={book}
+          depth={depth}
+          myCode={myCode}
           onBidClick={onBidClick}
           onOfferClick={onOfferClick}
           myAt={myAt}
@@ -236,9 +303,11 @@ function ContractRows({
 }
 
 function ExpandedLevels({
-  book, onBidClick, onOfferClick, myAt, cancelMineAt,
+  book, depth, myCode, onBidClick, onOfferClick, myAt, cancelMineAt,
 }: {
   book: ProjectedBook | undefined;
+  depth: number;
+  myCode: ParticipantCode | null;
   onBidClick(lvl: ProjectedLevel | undefined): void;
   onOfferClick(lvl: ProjectedLevel | undefined): void;
   myAt(side: OrderSide, price: number | undefined): readonly OrderId[] | undefined;
@@ -246,9 +315,10 @@ function ExpandedLevels({
 }): ReactNode {
   if (!book) return null;
   // Skip the best bid/offer — they're already shown in the collapsed
-  // row. Start from the second-best level on each side.
-  const bids = book.bids.slice(1);
-  const offers = book.offers.slice(1);
+  // row. Start from the second-best level on each side and show the
+  // user-chosen number of levels past BBO.
+  const bids = book.bids.slice(1, 1 + depth);
+  const offers = book.offers.slice(1, 1 + depth);
   const rows = Math.max(bids.length, offers.length);
   if (rows === 0) return null;
   return (
@@ -262,7 +332,7 @@ function ExpandedLevels({
             <td />
             <td />
             <td className="mk-code mk-book__cell" onClick={() => onBidClick(b)}>
-              {b?.parties[0]?.code ?? ""}
+              <PartyBadge parties={b?.parties} myCode={myCode} />
               {myAt("buy", b?.price) ? (
                 <CancelMineBtn onClick={() => cancelMineAt("buy", b?.price)} />
               ) : null}
@@ -281,7 +351,7 @@ function ExpandedLevels({
               {o?.size ?? ""}
             </td>
             <td className="mk-code mk-book__cell" onClick={() => onOfferClick(o)}>
-              {o?.parties[0]?.code ?? ""}
+              <PartyBadge parties={o?.parties} myCode={myCode} />
               {myAt("sell", o?.price) ? (
                 <CancelMineBtn onClick={() => cancelMineAt("sell", o?.price)} />
               ) : null}

@@ -8,15 +8,30 @@
   --mk-panel: #161b22;
   --mk-panel-2: #1f242c;
   --mk-border: #30363d;
-  --mk-text: #e6e6e6;
-  --mk-muted: #8b949e;
+  --mk-text: #ffffff;
+  /* --mk-muted is brighter than the canonical github-dim grey so every
+   * "secondary" label still clears WCAG AA on --mk-panel-2 (contrast
+   * ratio ≥ 4.5:1). Originally #8b949e; bumping to #c0c7d1 takes us
+   * from ~3.8:1 to ~7.2:1 against the darker panel surface, which is
+   * the worst-case background for muted text in this theme. */
+  --mk-muted: #c0c7d1;
   --mk-bid: #79c0ff;
   --mk-offer: #ff7b72;
-  --mk-pos: #e6e6e6;
+  --mk-pos: #ffffff;
   --mk-neg: #ff7b72;
   --mk-accent: #f0883e;
   --mk-success: #56d364;
   --mk-warn: #d29922;
+  --mk-danger: #e07070;
+}
+
+/* Belt-and-braces: anything inside the mockery app inherits explicit
+ * text color so an un-styled <div> / <span> / <p> can never end up
+ * black-on-black. Form controls were already pinned in reset.css
+ * (color-scheme: dark + explicit bg/color) but this guards every
+ * other element kind. */
+.mk-playing, .mk-setup, .mk-loading, .mk-workspace, .dock-layout {
+  color: var(--mk-text);
 }
 
 /* ------ buttons ------ */
@@ -77,6 +92,7 @@
 .mk-setup__subtitle { color: var(--mk-muted); margin: 0; }
 .mk-setup__section {
   background: var(--mk-panel);
+  color: var(--mk-text);
   border: 1px solid var(--mk-border);
   border-radius: 8px;
   padding: 16px 20px;
@@ -119,7 +135,8 @@
 .mk-contracts__shared-row { display: flex; flex-direction: column; gap: 8px; }
 .mk-contracts__list { list-style: none; padding: 0; margin: 0 0 12px 0; }
 .mk-contracts__item {
-  background: var(--mk-panel-2); padding: 10px 12px; border-radius: 4px;
+  background: var(--mk-panel-2); color: var(--mk-text);
+  padding: 10px 12px; border-radius: 4px;
   display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;
 }
 .mk-contracts__item p { margin: 0; }
@@ -133,7 +150,8 @@
   z-index: 100;
 }
 .mk-modal__panel {
-  background: var(--mk-panel); border: 1px solid var(--mk-border);
+  background: var(--mk-panel); color: var(--mk-text);
+  border: 1px solid var(--mk-border);
   border-radius: 8px; padding: 20px; max-width: 600px; width: 90%;
 }
 .mk-modal__panel h3 { margin-top: 0; }
@@ -143,7 +161,8 @@
 .mk-queue__list { list-style: none; padding: 0; margin: 0 0 12px 0; }
 .mk-queue__item {
   display: flex; align-items: center; gap: 12px;
-  background: var(--mk-panel-2); padding: 6px 10px; margin-bottom: 4px;
+  background: var(--mk-panel-2); color: var(--mk-text);
+  padding: 6px 10px; margin-bottom: 4px;
   border-radius: 4px;
 }
 .mk-queue__pos { color: var(--mk-muted); width: 28px; text-align: center; }
@@ -179,7 +198,8 @@
   flex: 1; min-height: 0; position: relative;
 }
 .mk-panel {
-  background: var(--mk-panel); border: 1px solid var(--mk-border);
+  background: var(--mk-panel); color: var(--mk-text);
+  border: 1px solid var(--mk-border);
   border-radius: 8px; padding: 12px; overflow: auto;
 }
 .mk-panel__title {
@@ -192,7 +212,7 @@
 .mk-workspace__menubar {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 12px;
-  background: var(--mk-panel);
+  background: var(--mk-panel); color: var(--mk-text);
   border-bottom: 1px solid var(--mk-border);
 }
 .mk-workspace__dock { flex: 1; position: relative; }
@@ -230,7 +250,8 @@
 .mk-menu { position: relative; }
 .mk-menu__panel {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
-  background: var(--mk-panel); border: 1px solid var(--mk-border);
+  background: var(--mk-panel); color: var(--mk-text);
+  border: 1px solid var(--mk-border);
   border-radius: 6px; padding: 4px; min-width: 220px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
@@ -260,12 +281,14 @@
 /* ------ topbar ------ */
 .mk-topbar {
   display: flex; align-items: center; gap: 16px;
-  background: var(--mk-panel); border-bottom: 1px solid var(--mk-border);
+  background: var(--mk-panel); color: var(--mk-text);
+  border-bottom: 1px solid var(--mk-border);
   padding: 8px 16px;
 }
 .mk-topbar__title { font-weight: 700; font-size: 1.1em; }
 .mk-topbar__phase {
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  background: var(--mk-panel-2); color: var(--mk-text);
+  border: 1px solid var(--mk-border);
   border-radius: 999px; padding: 2px 10px; font-family: ui-monospace, monospace;
 }
 .mk-topbar__countdown {
@@ -291,7 +314,8 @@
 .mk-seats { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .mk-seats__row {
   display: flex; align-items: center; gap: 10px;
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  background: var(--mk-panel-2); color: var(--mk-text);
+  border: 1px solid var(--mk-border);
   border-radius: 4px; padding: 6px 10px;
 }
 .mk-seats__role {
@@ -309,7 +333,8 @@
 .mk-cards-display h4 { margin: 0 0 4px 0; color: var(--mk-muted); font-size: 0.85em; }
 .mk-cards-display__row { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
 .mk-card {
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  background: var(--mk-panel-2); color: var(--mk-text);
+  border: 1px solid var(--mk-border);
   border-radius: 3px; width: 28px; height: 36px;
   display: flex; flex-direction: column; align-items: stretch;
   position: relative; box-sizing: border-box; overflow: hidden;
@@ -318,11 +343,16 @@
   flex: 1; min-height: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 1.3em; font-family: ui-monospace, monospace; line-height: 1;
+  color: var(--mk-text);
 }
 .mk-card__banner {
   border-top: 1px solid var(--mk-border);
   background: var(--mk-panel);
-  color: var(--mk-muted);
+  /* var(--mk-text) here, not muted: the banner is the only label
+   * carrying the participant code, so it needs to be plainly legible
+   * at a glance — muted reads as background noise for the small
+   * text size used here. */
+  color: var(--mk-text);
   font-size: 0.55em; font-weight: 600; line-height: 1;
   padding: 2px 1px; text-align: center;
   text-transform: uppercase; letter-spacing: 0.04em;
@@ -337,6 +367,7 @@
 .mk-book {
   width: 100%; border-collapse: collapse;
   font-variant-numeric: tabular-nums;
+  color: var(--mk-text);
 }
 .mk-book th {
   position: sticky; top: 0; background: var(--mk-panel);
@@ -345,12 +376,27 @@
   border-bottom: 1px solid var(--mk-border);
 }
 .mk-book td { padding: 3px 2px; vertical-align: middle; text-align: center; }
-.mk-book__row { background: var(--mk-panel-2); }
+.mk-book__row { background: var(--mk-panel-2); color: var(--mk-text); }
 .mk-book__row + .mk-book__row { border-top: 2px solid var(--mk-bg); }
 .mk-book__row--level { background: transparent; font-size: 0.92em; }
 .mk-book__row--level td { padding: 2px 2px; color: var(--mk-muted); }
 
-.mk-book__expand { width: 22px; padding: 0 !important; }
+.mk-book__expand { width: 38px; padding: 0 !important; }
+.mk-book__expand-stack {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 2px 0;
+}
+.mk-book__depth {
+  width: 32px; padding: 1px 2px; text-align: center;
+  background: var(--mk-bg); color: var(--mk-text);
+  border: 1px solid var(--mk-border); border-radius: 3px;
+  font: inherit; font-size: 0.85em;
+}
+.mk-book__depth::-webkit-outer-spin-button,
+.mk-book__depth::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.mk-book__party--mine {
+  color: var(--mk-accent); font-weight: 700;
+}
 .mk-book__cell { cursor: pointer; padding: 3px 4px !important; }
 .mk-book__cell:hover { background: rgba(255,255,255,0.05); border-radius: 3px; }
 
@@ -381,12 +427,12 @@
 .mk-book__hit:hover:not(:disabled) { background: #283038; }
 .mk-book__hit:disabled { opacity: 0.4; cursor: not-allowed; }
 .mk-book__cancel-mine {
-  background: transparent; color: var(--mk-danger, #e07070);
-  border: 1px solid var(--mk-danger, #e07070); border-radius: 3px;
+  background: transparent; color: var(--mk-danger);
+  border: 1px solid var(--mk-danger); border-radius: 3px;
   font-size: 0.85em; line-height: 1; padding: 1px 5px; margin-left: 6px;
   cursor: pointer; vertical-align: middle;
 }
-.mk-book__cancel-mine:hover { background: var(--mk-danger, #e07070); color: var(--mk-bg, #1c1f24); }
+.mk-book__cancel-mine:hover { background: var(--mk-danger); color: var(--mk-bg); }
 
 /* ------ order placer ------ */
 .mk-placer {
@@ -410,6 +456,27 @@
   color: var(--mk-text); padding: 4px 8px; border-radius: 4px;
 }
 .mk-tns__row td { padding: 4px 10px; font-size: 0.9em; }
+/* New-trade flash: each cell of a freshly arrived row gets a
+ * fading orange overlay via ::after. We use a pseudo-element rather
+ * than animating the row's background because (a) the static
+ * .mk-phase-N background should remain, and (b) the per-contract
+ * left-edge stripe lives on td:first-child's box-shadow and we
+ * don't want to disturb it. The overlay sits above the cell
+ * content (low alpha so the underlying text + stripe still read
+ * clearly) and fades from opacity 1 → 0 over 3 seconds, then
+ * stays invisible (`forwards`). */
+.mk-tns__row--new td { position: relative; }
+.mk-tns__row--new td::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: rgba(240, 136, 62, 0.45);
+  pointer-events: none;
+  animation: mk-tns-flash 3s ease-out forwards;
+}
+@keyframes mk-tns-flash {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
 .mk-tns__divider td {
   /* Section gap between consecutive phases. Rows are newest-first, so
    * the divider labels the boundary itself with the phase that just
@@ -433,13 +500,15 @@
   font-weight: 900; text-decoration: underline;
   text-decoration-thickness: 2px; text-underline-offset: 3px;
 }
-/* Phase-coloured backgrounds. Distinct, dim enough not to fight text. */
-.mk-phase-0 { background: #161b22; }
-.mk-phase-1 { background: #1a2030; }
-.mk-phase-2 { background: #1c2520; }
-.mk-phase-3 { background: #251c20; }
-.mk-phase-4 { background: #1f1c25; }
-.mk-phase-5 { background: #25201c; }
+/* Phase-coloured backgrounds. Distinct, dim enough not to fight text.
+ * Each row pins color: var(--mk-text) so the white-on-dark contrast
+ * holds regardless of which phase tint is in use. */
+.mk-phase-0 { background: #161b22; color: var(--mk-text); }
+.mk-phase-1 { background: #1a2030; color: var(--mk-text); }
+.mk-phase-2 { background: #1c2520; color: var(--mk-text); }
+.mk-phase-3 { background: #251c20; color: var(--mk-text); }
+.mk-phase-4 { background: #1f1c25; color: var(--mk-text); }
+.mk-phase-5 { background: #25201c; color: var(--mk-text); }
 /* Per-contract left-edge accent, on top of the phase background. */
 .mk-contract-0 td:first-child { box-shadow: inset 4px 0 0 #4f9eff; }
 .mk-contract-1 td:first-child { box-shadow: inset 4px 0 0 #ff7b54; }
@@ -456,15 +525,6 @@
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
-.mk-host__end { display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--mk-panel-2); border-radius: 4px; }
+.mk-host__end { display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--mk-panel-2); color: var(--mk-text); border-radius: 4px; }
 .mk-host__grace-row { display: flex; gap: 6px; align-items: center; }
 
-/* ------ finished screen ------ */
-.mk-finished { max-width: 800px; margin: 0 auto; padding: 24px 32px; }
-.mk-finished h1 { margin: 0 0 16px 0; }
-.mk-finished h2 { margin: 24px 0 12px 0; font-size: 1.1em; }
-.mk-finished__cards { list-style: none; padding: 0; display: flex; gap: 8px; }
-.mk-finished__cards li {
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
-  border-radius: 4px; padding: 8px 16px;
-}

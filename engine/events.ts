@@ -40,6 +40,16 @@ export function rotateInformed(state: GameState): GameEvent {
     state.informedCards[i] = rotatedCards[i]!;
     state.informedCardOrigin[i] = rotatedOrigins[i]!;
   }
+  // Record that each informed seat has now seen the card they're
+  // currently holding. The UI keeps revealed values visible to a
+  // player even after a future rotation moves the card on, so each
+  // seat's "seen" list grows monotonically.
+  for (let i = 0; i < n; i++) {
+    const origin = state.informedCardOrigin[i]!;
+    const seen = state.seenInformedCardOrigins[i] ?? [];
+    if (!seen.includes(origin)) seen.push(origin);
+    state.seenInformedCardOrigins[i] = seen;
+  }
   state.phase++;
   return { type: "ROTATED" };
 }

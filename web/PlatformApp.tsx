@@ -2,6 +2,10 @@
 // PlatformApp — the entry the In My Pocket platform shell mounts when
 // `tableMeta.status === "playing"`. Mockery handles its own sub-states
 // (`setup`, `playing`, `finished`) inside the shell.
+//
+// `finished` reuses the playing workspace rather than swapping to a
+// dedicated screen, so the trades panel, revealed cards, and final
+// PnL stay visible in the same dock the players were trading in.
 // =============================================================================
 
 import type { ReactNode } from "react";
@@ -9,7 +13,6 @@ import type { PlatformGameContext } from "./types";
 import { useMockerySession } from "./useMockerySession";
 import { SetupScreen } from "./screens/SetupScreen";
 import { PlayingScreen } from "./screens/PlayingScreen";
-import { FinishedScreen } from "./screens/FinishedScreen";
 
 import "rc-dock/dist/rc-dock-dark.css";
 import "./styles/reset.css";
@@ -49,9 +52,9 @@ export default function PlatformApp({ ctx }: Props): ReactNode {
       />
     );
   }
-  if (status === "finished") {
-    return <FinishedScreen snapshot={session.snapshot} />;
-  }
+  // `playing` and `finished` both render the workspace — the engine
+  // already rejects orders post-finish, and the panels self-reveal
+  // (cards, settled PnL) when status flips to finished.
   return (
     <PlayingScreen
       snapshot={session.snapshot}

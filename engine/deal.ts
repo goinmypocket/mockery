@@ -23,6 +23,13 @@ export function deal(state: GameState): void {
 
   state.informedCards = new Array<number>(state.options.informedSeats);
   state.informedCardOrigin = new Array<number>(state.options.informedSeats);
+  // Each informed seat starts having seen its own freshly-dealt card.
+  // Sized to seats.length (not informedSeats) so projection lookups by
+  // seat index are safe for uninformed seats too — they get [].
+  state.seenInformedCardOrigins = new Array<number[]>(state.seats.length);
+  for (let i = 0; i < state.seats.length; i++) {
+    state.seenInformedCardOrigins[i] = i < state.options.informedSeats ? [i] : [];
+  }
   for (let i = 0; i < state.options.informedSeats; i++) {
     state.informedCards[i] = deck[i]!;
     state.informedCardOrigin[i] = i;

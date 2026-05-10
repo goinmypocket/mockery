@@ -32,6 +32,19 @@ export const FORBIDDEN_TOKENS: readonly string[] = [
 
 const DEFAULT_TIMEOUT_MS = 50;
 
+/** Process-lifetime cache of compiled `Script` objects keyed by their
+ *  raw source. The same payoff source is typically evaluated many
+ *  times — once at validate, once at settle, and at settle time
+ *  every contract that shares a formula re-compiles otherwise.
+ *  `Script` instances are immutable and safe to reuse across
+ *  `runInContext` calls, so caching is plain memoization. */
+const compiledCache = new Map<string, Script>();
+
+/** Helpers depend only on `informedSeats`, which is bounded by
+ *  MAX_SEAT_COUNT, so this map stays tiny. Build once per distinct
+ *  seat count instead of per evaluation. */
+const helpersCache = new Map<number, ReturnType<typeof buildHelpersImpl>>();
+
 export interface ValidationResult {
   ok: boolean;
   reason?: string;
@@ -45,7 +58,9 @@ export function validatePayoffSource(source: string): ValidationResult {
       return { ok: false, reason: `forbidden token: ${token}` };
     }
   }
-  // Try to compile — syntax errors caught here.
+  // Try to compile — syntax errors caught here. The compiled Script
+  // lands in the cache so the immediately-following evaluatePayoff
+  // doesn't compile a second time.
   try {
     compile(source);
   } catch (err) {
@@ -54,8 +69,18 @@ export function validatePayoffSource(source: string): ValidationResult {
   return { ok: true };
 }
 
-/** Build the H namespace exposed to user code. */
+/** Build the H namespace exposed to user code. Memoized by
+ *  informedSeats so settleAll's per-contract loop reuses one helper
+ *  bag instead of allocating fresh closures for every payoff. */
 export function buildHelpers(informedSeats: number) {
+  const cached = helpersCache.get(informedSeats);
+  if (cached) return cached;
+  const fresh = buildHelpersImpl(informedSeats);
+  helpersCache.set(informedSeats, fresh);
+  return fresh;
+}
+
+function buildHelpersImpl(informedSeats: number) {
   return {
     PUBLIC_START: informedSeats,
     count: (cards: readonly number[], pred: (c: number) => boolean) =>
@@ -154,11 +179,15 @@ export function settleAll(
 // ---------------------------------------------------------------------------
 
 function compile(source: string): Script {
+  const cached = compiledCache.get(source);
+  if (cached) return cached;
   // Wrap user source: define `function payoff(cards) { <source> }` and
   // invoke it. The sandbox provides `cards` and the helper namespace
   // `H`; the wrapper assigns the return value to `__result`.
   const wrapped = `__result = (function payoff(cards) {\n${source}\n}).call(undefined, cards);`;
-  return new Script(wrapped);
+  const fresh = new Script(wrapped);
+  compiledCache.set(source, fresh);
+  return fresh;
 }
 
 function escapeRegex(s: string): string {

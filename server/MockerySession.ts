@@ -124,6 +124,13 @@ export interface MockerySave {
    *  have happened, which is wrong for in-flight games but the only
    *  reasonable inference without further state). */
   readonly informedCardOrigin?: readonly number[];
+  /** Per-seat list of origin indices the seat's player has held at
+   *  some point. Optional for back-compat; on hydrate we default to
+   *  each informed seat having seen its currently-held origin (which
+   *  preserves the immediately-visible card but loses any earlier
+   *  cards that have already rotated away — the only inference
+   *  available without the full history). */
+  readonly seenInformedCardOrigins?: ReadonlyArray<readonly number[]>;
   readonly publicCards?: readonly number[];
   readonly publicRevealed?: readonly boolean[];
   readonly phase?: number;
@@ -1288,6 +1295,7 @@ export class MockerySession implements GameSession<MockerySave> {
       rngState: getRngState(this.state.rng),
       informedCards: this.state.informedCards.slice(),
       informedCardOrigin: this.state.informedCardOrigin.slice(),
+      seenInformedCardOrigins: this.state.seenInformedCardOrigins.map((arr) => arr.slice()),
       publicCards: this.state.publicCards.slice(),
       publicRevealed: this.state.publicRevealed.slice(),
       phase: this.state.phase,
@@ -1339,6 +1347,13 @@ export class MockerySession implements GameSession<MockerySave> {
     this.state.informedCardOrigin = blob.informedCardOrigin
       ? [...blob.informedCardOrigin]
       : this.state.informedCards.map((_, i) => i);
+    this.state.seenInformedCardOrigins = blob.seenInformedCardOrigins
+      ? blob.seenInformedCardOrigins.map((arr) => [...arr])
+      : this.state.seats.map((_, i) =>
+          i < this.state.informedCardOrigin.length
+            ? [this.state.informedCardOrigin[i]!]
+            : [],
+        );
     this.state.publicCards = blob.publicCards ? [...blob.publicCards] : [];
     this.state.publicRevealed = blob.publicRevealed ? [...blob.publicRevealed] : [];
     this.state.phase = blob.phase ?? 0;

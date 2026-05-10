@@ -30,6 +30,7 @@ function mkState(args: { informedSeats: number; publicSlots: number }): GameStat
   s.status = "playing";
   s.informedCards = new Array(args.informedSeats).fill(0).map((_, i) => i + 1);
   s.informedCardOrigin = new Array(args.informedSeats).fill(0).map((_, i) => i);
+  s.seenInformedCardOrigins = new Array(args.informedSeats).fill(0).map((_, i) => [i]);
   s.publicCards = new Array(args.publicSlots).fill(0).map((_, i) => 100 + i);
   s.publicRevealed = new Array(args.publicSlots).fill(false);
   return s;
@@ -69,6 +70,24 @@ describe("events", () => {
       }
       rotateInformed(s);
     }
+  });
+
+  it("rotateInformed grows each seat's seen-origin list monotonically", () => {
+    const s = mkState({ informedSeats: 3, publicSlots: 0 });
+    // Initial deal: each seat has only seen its own origin.
+    expect(s.seenInformedCardOrigins).toEqual([[0], [1], [2]]);
+    rotateInformed(s);
+    // Pass right: seat 0 ← seat 2, seat 1 ← seat 0, seat 2 ← seat 1.
+    expect(s.seenInformedCardOrigins).toEqual([[0, 2], [1, 0], [2, 1]]);
+    rotateInformed(s);
+    // After two rotations, each seat has seen all three origins.
+    expect(s.seenInformedCardOrigins.map((a) => a.slice().sort())).toEqual([
+      [0, 1, 2], [0, 1, 2], [0, 1, 2],
+    ]);
+    rotateInformed(s);
+    // A third rotation re-visits an already-seen origin — the list
+    // must NOT duplicate entries.
+    expect(s.seenInformedCardOrigins.map((a) => a.length)).toEqual([3, 3, 3]);
   });
 
   it("revealPublic with null picks lowest still-hidden slot", () => {

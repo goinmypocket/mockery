@@ -21,12 +21,17 @@ export type CodeMode = "alpha" | "random";
 
 export type IdentityReveal = "all" | "host" | "listed";
 
-/** Engine-internal result type used by operations that need to return a
- *  value on success (e.g. orderId + fills from a place op). The seam's
- *  `Result` (in GameDefinition.ts) stays match-exactly with the
- *  platform — no `value` payload there. */
+/** Engine-internal result type used by operations that may return a
+ *  value on success (e.g. orderId + fills from a place op). When
+ *  `T extends void` the success arm carries no `value` field —
+ *  forces void operations to be plain `{ ok: true }` rather than
+ *  `{ ok: true; value: undefined }`. The seam's `Result` (in
+ *  GameDefinition.ts) stays match-exactly with the platform — no
+ *  value payload there. */
 export type OpResult<T> =
-  | { readonly ok: true; readonly value: T }
+  | (T extends void
+      ? { readonly ok: true }
+      : { readonly ok: true; readonly value: T })
   | { readonly ok: false; readonly reason: string };
 
 export interface ResolvedOptions {

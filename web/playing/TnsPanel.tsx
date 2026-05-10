@@ -1,8 +1,14 @@
 // =============================================================================
 // TnsPanel — time and sales. Most recent first. Phase-coloured rows.
+//
+// New trades flash a brief orange overlay that fades to transparent
+// over 3 seconds. We track the set of trade ids seen on the previous
+// render in a ref so we only flash *newly arrived* rows — the initial
+// snapshot (which can include the entire historical log on refresh)
+// renders without a flood of animations.
 // =============================================================================
 
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProjectedSnapshot } from "../../engine/project";
 
 interface Props {
@@ -35,6 +41,23 @@ export function TnsPanel({ snapshot }: Props): ReactNode {
   // Stable contract ordinal so we can hand each one a distinct color.
   const contractIndex: Record<string, number> = {};
   snapshot.contracts.forEach((c, i) => { contractIndex[c.id] = i; });
+
+  // Track previously-seen trade ids so we can flag the rows that
+  // arrived on this render and animate just those. `null` on the
+  // very first render so the initial snapshot doesn't flash every
+  // historical row.
+  const seenIdsRef = useRef<Set<string> | null>(null);
+  const newIds = useMemo(() => {
+    if (seenIdsRef.current === null) return new Set<string>();
+    const fresh = new Set<string>();
+    for (const t of snapshot.recentTrades) {
+      if (!seenIdsRef.current.has(t.id)) fresh.add(t.id);
+    }
+    return fresh;
+  }, [snapshot.recentTrades]);
+  useEffect(() => {
+    seenIdsRef.current = new Set(snapshot.recentTrades.map((t) => t.id));
+  }, [snapshot.recentTrades]);
 
   return (
     <div className="mk-tns">
@@ -87,7 +110,7 @@ export function TnsPanel({ snapshot }: Props): ReactNode {
               <Fragment key={t.id}>
                 {divider}
                 <tr
-                  className={`mk-tns__row mk-phase-${t.phase % 6} mk-contract-${cidx % 6}`}
+                  className={`mk-tns__row mk-phase-${t.phase % 6} mk-contract-${cidx % 6} ${newIds.has(t.id) ? "mk-tns__row--new" : ""}`}
                 >
                   <td>{formatTime(t.ts)}</td>
                   <td className="mk-tns__phase">{t.phase}</td>
