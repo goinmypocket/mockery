@@ -156,6 +156,29 @@ describe("natural-player", () => {
     expect(myBidLevel!.orders.some((o) => o.participant.kind === "bot")).toBe(true);
   });
 
+  it("buyer with no other bidders sits 1 tick inside the offer (does not cross)", () => {
+    // Wide-budget buyer; only a seller has posted, no other bidders.
+    // The bot should place a passive bid at bestOffer − 1, not at the
+    // offer price (which would cross).
+    const { s, clock } = newGame();
+    const bot = buildBotWithNatural({ targetQty: 5, widthInitTicks: 10 });
+    new BotOrchestrator(s, clock, { "multi-profile": bot });
+    configureAndStart(s, ["XY"], "multi-profile");
+    const cid = s.getEngineState().contracts[0]!.id;
+
+    s.handleGameMessage(BOB, { type: "PLACE_LIMIT", contractId: cid, side: "sell", qty: 5, price: 105 });
+    clock.advance(100);    // Phase 1 → no q25 → join (no-op, our side empty)
+    // Drive Phase 2.
+    s.handleGameMessage(BOB, { type: "PLACE_LIMIT", contractId: cid, side: "sell", qty: 5, price: 110 });
+    clock.advance(100);
+
+    // Bot should be resting at 104 (one tick inside the 105 offer),
+    // NOT at 105 (which would have crossed and filled).
+    expect(botPosition(s, cid)).toBe(0);
+    const bids = s.getEngineState().books[cid]!.bids;
+    expect(bids.some((l) => l.price === 104 && l.orders.some((o) => o.participant.kind === "bot"))).toBe(true);
+  });
+
   it("two concurrent same-direction profiles each fill their own target", () => {
     // Per-instance attribution: even though both profiles see the bot's
     // shared position growing, each instance counts only its own fills

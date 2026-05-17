@@ -7,12 +7,21 @@ arrival; closes itself when the target is reached.
 ## Behavior
 
 On spawn the instance is given a signed target size (`targetQty`).
-Positive → buy; negative → sell. Throughout this doc, "best" and
-"penny" are direction-aware: for a buyer, **best** is the best bid and
-**penny** means improving the offer by a tick; for a seller it's the
-opposite.
+Positive → buy; negative → sell. Vocabulary:
 
-All order actions experience a uniform `lagMs` delay (parameter).
+- **bid** = a buy order; **offer** = a sell order. Best bid is the
+  highest buy price; best offer the lowest sell price.
+- **Penny (our own side)**: place a new resting order one tick more
+  aggressive than the next-best other order on our side. For a buyer,
+  bid one tick above the best other bid; for a seller, offer one tick
+  below the best other offer. Pennying never crosses the spread.
+- **Take (the opposite side)**: cross the spread aggressively. For a
+  buyer, lift the best offer; for a seller, hit the best bid.
+- **Touch**: best bid + best offer; **width** = best offer − best bid.
+  When computing width we ignore our own resting orders.
+
+All order actions experience a uniform `lagMs` delay (the spawner's
+`profile.lagMs`, applied via `subCtx.afterLag`).
 
 ### Phase 1 — Spawn sweep
 
@@ -29,20 +38,26 @@ If the spread is *not* tight, fall through to Phase 2.
 
 ### Phase 2 — Initiate with passive pennying
 
-Define a **width budget** = `widthInitTicks` (parameter, scaled by tick
-size and aware of the historic median BAS — see `historicMedianGuard`).
+Define a **width budget** in ticks = `widthInitTicks`, capped by
+`historicMedianGuard × historic median BAS / tickSize` so the budget
+stays grounded in market conditions.
 
-While the best offer minus current price ≤ width budget:
+Compute the observed width = `bestOffer − bestOtherBid` (for a buyer;
+mirrored for a seller). "Other" excludes the instance's own resting
+orders so we never penny ourselves.
 
-- Penny the best offer (place a buy at `bestOffer − 1` for a buyer,
-  ignoring the instance's own resting orders when computing the touch).
-- If another participant pennies past the width budget, stop pennying
-  and **enter Phase 3 (take)** — lift the offer for the remaining size.
+- If width ≤ width budget: **penny our own side.** Buyer places a
+  resting bid at `bestOtherBid + 1`; seller places a resting offer at
+  `bestOtherOffer − 1`. If our side is empty (no other bidder for a
+  buyer), instead sit one tick inside the opposite touch (`bestOffer −
+  1` for a buyer) — same intent, just no one to step over.
+- If width > width budget: another participant has widened the spread
+  past what we'll wait through → **enter Phase 3 (take)**.
 
-If no action happens in this contract for `idleTicksTowardImpatience`
-seconds, shrink the width budget linearly by `urgencyDecayPerSec`
-toward 1 tick. (Helper: `secondsSinceLastAction`.) The decay models
-the player getting more urgent the longer the market sits.
+If no trade happens in this contract for `idleSecondsBeforeDecay`
+seconds, shrink the width budget linearly by `urgencyDecayPerSec` per
+elapsed second toward 1 tick. (Helper: `secondsSinceLastAction`.) The
+decay models the player getting more urgent the longer the market sits.
 
 Once the width budget reaches 1 tick or below, the instance enters
 **Phase 4 (urgent)**.
@@ -58,13 +73,14 @@ Closes the instance once filled.
 Width budget has decayed below 1 tick. The instance is now willing to
 pay any price:
 
-- Periodically (every `urgentPennyIntervalMs`) repenny the bid.
+- Periodically (every `urgentPennyIntervalMs`) re-penny our own side
+  (raise our bid for a buyer, lower our offer for a seller).
 - If `currentPrice − ema(currentPrice) > panicThreshold`, switch to
-  taking at the current best offer. `currentPrice` is the last trade
-  price; when that's `null`, fall back to `bestBid` (the side the
-  buyer would have to take); when that's also `null`, do nothing this
-  tick.
-- For a seller (`targetQty < 0`), the panic condition flips:
+  taking the opposite side (buyer lifts the offer, seller hits the
+  bid). `currentPrice` is the last trade price; when that's `null`,
+  fall back to the touch on our own side (`bestBid` for a buyer); when
+  that's also `null`, do nothing this tick.
+- For a seller (`targetQty < 0`), the panic condition flips sign:
   `currentPrice − ema(currentPrice) < −panicThreshold`.
 
 ### Termination

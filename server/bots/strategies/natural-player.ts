@@ -248,26 +248,40 @@ function drivePhase2(sub: SubBotContext, state: State): void {
   const book = sub.snapshot.books[state.cid];
   if (!book) return;
 
+  // Best price on our own side, excluding our own resting orders.
+  // For a buyer this is the best other bid; for a seller, the best
+  // other offer.
   const others = othersBestPrice(sub, state, book);
+  // Touch on the opposite side (offer for a buyer, bid for a seller).
   const opposite = state.direction === "buy" ? book.offers[0]?.price : book.bids[0]?.price;
-  if (others === null || opposite === undefined) {
-    // Nothing to penny against; just join if we can.
-    placePassive(sub, state, others ?? opposite ?? null);
-    return;
+
+  // Where would we rest? Penny our own side: 1 tick over the next-best
+  // other (a buyer raises the bid, a seller lowers the offer). With no
+  // competition on our side, sit 1 tick inside the opposite touch so we
+  // step into the spread without crossing it. With neither side
+  // populated, there's nothing to do.
+  let newPx: number | null = null;
+  if (others !== null) {
+    newPx = state.direction === "buy" ? others + TICK : others - TICK;
+  } else if (opposite !== undefined) {
+    newPx = state.direction === "buy" ? opposite - TICK : opposite + TICK;
+  }
+  if (newPx === null) return;
+
+  // If both sides are populated, check the width-budget breach. The
+  // width here is the gap between the next-best other on our side and
+  // the opposite touch — that's what other players see, and the spec's
+  // threshold is defined against it.
+  if (others !== null && opposite !== undefined) {
+    const width = state.direction === "buy" ? opposite - others : others - opposite;
+    const cappedBudget = capByHistoricMedian(sub, state, state.widthBudget);
+    if (width > cappedBudget) {
+      state.phase = "take";
+      drivePhase3(sub, state);
+      return;
+    }
   }
 
-  // Width from us to the opposite touch.
-  const width = state.direction === "buy" ? opposite - others : others - opposite;
-  const cappedBudget = capByHistoricMedian(sub, state, state.widthBudget);
-
-  if (width > cappedBudget) {
-    // Threshold breached — cross over.
-    state.phase = "take";
-    drivePhase3(sub, state);
-    return;
-  }
-
-  const newPx = state.direction === "buy" ? others + TICK : others - TICK;
   placePassive(sub, state, newPx);
 }
 
