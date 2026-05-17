@@ -24,10 +24,13 @@ export interface DistributionArgs {
 
 export interface ContractDistribution {
   readonly pmf: ReadonlyMap<number, number>;
+  /** E[payoff]. `NaN` when no configurations evaluated successfully. */
   readonly mean: number;
+  /** Var[payoff]. `NaN` when no configurations evaluated successfully. */
   readonly variance: number;
-  readonly min: number;
-  readonly max: number;
+  /** Support extremes; `null` when no configurations evaluated successfully. */
+  readonly min: number | null;
+  readonly max: number | null;
   readonly configurations: number;
   readonly failures: number;
 }
@@ -58,7 +61,12 @@ export function contractDistribution(args: DistributionArgs): ContractDistributi
   if (sumW > 0) for (const [k, v] of pmf) pmf.set(k, v / sumW);
   const mean = sumW > 0 ? sumWx / sumW : NaN;
   const variance = sumW > 0 ? Math.max(sumWxx / sumW - mean * mean, 0) : NaN;
-  return { pmf, mean, variance, min: minV, max: maxV, configurations, failures };
+  return {
+    pmf, mean, variance,
+    min: sumW > 0 ? minV : null,
+    max: sumW > 0 ? maxV : null,
+    configurations, failures,
+  };
 }
 
 // ---------------------------------------------------------------------------

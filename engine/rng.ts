@@ -47,3 +47,15 @@ export function shuffle<T>(arr: readonly T[], rng: Rng): T[] {
 export function randomInt(min: number, max: number, rng: Rng): number {
   return unsafeUniformIntDistribution(min, max, rng);
 }
+
+/** Deterministic seed derived from a base seed and a string key
+ *  (FNV-1a hash XOR base). Used wherever a sub-system needs its own
+ *  replay-stable RNG keyed off the engine's master seed plus a
+ *  stable identifier (entityId, groupId, etc.). */
+export function deriveSeed(base: number, key: string): number {
+  let h = base >>> 0;
+  for (let i = 0; i < key.length; i++) {
+    h = ((h ^ key.charCodeAt(i)) * 16777619) >>> 0;
+  }
+  return h;
+}

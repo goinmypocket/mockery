@@ -33,7 +33,7 @@ import type {
 } from "../../shared/types";
 import { participantKey } from "../../shared/types";
 import type { BotStateSnapshot } from "../../shared/types";
-import { makeRng } from "../../engine/rng";
+import { deriveSeed, makeRng } from "../../engine/rng";
 import { unsafeUniformIntDistribution } from "pure-rand";
 import { drawProfilesFromWire, type WireBotConfigSpec } from "./config";
 import { multiProfileBot } from "./spawning";
@@ -133,64 +133,56 @@ export class BotOrchestrator {
 
   private onEnterPlaying(): void {
     const state = this.session.getEngineState();
-
-    // Instantiate groups first (constructor-time + state-side); remember
-    // the entities they own so standalone iteration skips them.
+    const baseSeed = state.options.seed;
     const claimed = new Set<string>();
-    const groupsFromState = state.botGroups.map((g): import("./api").BotGroupConfig => {
-      const strat = g.strategyId ? this.strategies[g.strategyId] : undefined;
-      const wire = g.config as unknown as import("./config").WireBotConfigSpec | undefined;
-      return {
-        groupId: g.groupId,
-        entityIds: g.entityIds,
-        ...(strat ? { strategy: strat } : {}),
-        ...(g.params ? { params: g.params as Params } : {}),
-        ...(wire ? { config: wire } : {}),
+
+    // Helper: resolve & instantiate any spec source (group or entity).
+    const launch = (
+      label: string,
+      key: string,
+      entityIds: readonly string[],
+      src: SourceSpec,
+    ): boolean => {
+      try {
+        const r = resolveSource(this.strategies, baseSeed, key, src);
+        if (!r) return false;
+        this.instantiateForKey(key, entityIds.slice(), r);
+        return true;
+      } catch (err) {
+        console.warn(`[${label}:${key}] invalid (${(err as Error).message}); skipping`);
+        return false;
+      }
+    };
+
+    // 1. Groups (constructor-time programmatic + state-side wire).
+    for (const g of this.groups) {
+      if (launch("bot-group", g.groupId, g.entityIds, g)) {
+        for (const eid of g.entityIds) claimed.add(eid);
+      }
+    }
+    for (const g of state.botGroups) {
+      const src: SourceSpec = {
+        strategyId: g.strategyId,
+        params: g.params,
+        config: g.config as unknown as WireBotConfigSpec | undefined,
         ...(typeof g.seed === "number" ? { seed: g.seed } : {}),
       };
-    });
-    for (const g of [...this.groups, ...groupsFromState]) {
-      try {
-        this.instantiateGroup(g);
+      if (launch("bot-group", g.groupId, g.entityIds, src)) {
         for (const eid of g.entityIds) claimed.add(eid);
-      } catch (err) {
-        console.warn(`[bot-group:${g.groupId}] invalid (${(err as Error).message}); skipping`);
       }
     }
 
+    // 2. Standalone entities (skip those claimed by a group).
     for (const e of state.botEntities) {
       if (claimed.has(e.entityId)) continue;
-      // Config takes precedence: build a multiProfileBot spawner
-      // deterministically from (options.seed XOR entityId).
-      if (e.config) {
-        try {
-          const seed = deriveSeed(state.options.seed, e.entityId);
-          const wire = e.config as unknown as WireBotConfigSpec;
-          const profiles = drawProfilesFromWire(wire, this.strategies, makeRng(seed));
-          const spawner = multiProfileBot({ seed, profiles });
-          this.instantiate(e.entityId, spawner, Object.freeze({}));
-        } catch (err) {
-          console.warn(`[bot:${e.entityId}] config invalid (${(err as Error).message}); skipping`);
-        }
-        continue;
-      }
-      if (!e.strategyId) continue;
-      const strat = this.strategies[e.strategyId];
-      if (!strat) continue;
-      const resolved = resolveParams(strat.paramsSchema, e.params ?? null);
-      if (!resolved.ok) {
-        // Surface and skip — better than crashing the session at
-        // game-start because one bot's params are stale.
-        console.warn(
-          `[bot:${e.entityId}] params invalid (${resolved.reason}); skipping`,
-        );
-        continue;
-      }
-      this.instantiate(e.entityId, strat, resolved.params);
+      launch("bot", e.entityId, [e.entityId], {
+        strategyId: e.strategyId,
+        params: e.params,
+        config: e.config as unknown as WireBotConfigSpec | undefined,
+      });
     }
-    for (const inst of this.instances.values()) {
-      this.callOnStart(inst);
-    }
+
+    for (const inst of this.instances.values()) this.callOnStart(inst);
   }
 
   private onMarketChanged(): void {
@@ -330,63 +322,29 @@ export class BotOrchestrator {
   // Instance & context construction
   // -------------------------------------------------------------------
 
-  private instantiate(
-    entityId: string,
-    strategy: AnyBotStrategy,
-    params: Params,
+  /** Unified instance build for both standalone bots and groups.
+   *  Standalone passes `entityIds = [entityId]` and a no-op routing
+   *  RNG; groups pass the full set. */
+  private instantiateForKey(
+    instanceKey: string,
+    entityIds: string[],
+    resolved: { strategy: AnyBotStrategy; params: Params; seed: number },
   ): void {
+    if (entityIds.length === 0) throw new Error("instance has no entityIds");
     const inst: BotInstance = {
-      entityId,
-      entityIds: [entityId],
-      strategy,
-      params,
-      local: new Map(),
-      timers: new Set(),
-      errorCount: 0,
-      context: undefined as unknown as BotContext,   // set by refreshContext
-      lastPhase: this.session.getEngineState().phase,
-      bookFingerprints: this.computeBookFingerprints(),
-    };
-    this.instances.set(entityId, inst);
-    this.refreshContext(inst);
-  }
-
-  private instantiateGroup(g: import("./api").BotGroupConfig): void {
-    if (g.entityIds.length === 0) throw new Error("group has no entityIds");
-    const state = this.session.getEngineState();
-    const seed = g.seed ?? deriveSeed(state.options.seed, g.groupId);
-
-    let strategy: AnyBotStrategy;
-    let params: Params;
-    if (g.strategy && g.config) {
-      throw new Error("group must specify exactly one of strategy / config");
-    } else if (g.strategy) {
-      strategy = g.strategy;
-      const resolved = resolveParams(strategy.paramsSchema, g.params ?? null);
-      if (!resolved.ok) throw new Error(`params invalid: ${resolved.reason}`);
-      params = resolved.params;
-    } else if (g.config) {
-      const profiles = drawProfilesFromWire(g.config, this.strategies, makeRng(seed));
-      strategy = multiProfileBot({ seed, profiles });
-      params = Object.freeze({});
-    } else {
-      throw new Error("group needs either strategy or config");
-    }
-
-    const inst: BotInstance = {
-      entityId: g.groupId,
-      entityIds: g.entityIds.slice(),
-      strategy,
-      params,
+      entityId: instanceKey,
+      entityIds,
+      strategy: resolved.strategy,
+      params: resolved.params,
       local: new Map(),
       timers: new Set(),
       errorCount: 0,
       context: undefined as unknown as BotContext,
-      lastPhase: state.phase,
+      lastPhase: this.session.getEngineState().phase,
       bookFingerprints: this.computeBookFingerprints(),
-      routingRng: makeRng(seed),
+      ...(entityIds.length > 1 ? { routingRng: makeRng(resolved.seed) } : {}),
     };
-    this.instances.set(g.groupId, inst);
+    this.instances.set(instanceKey, inst);
     this.refreshContext(inst);
   }
 
@@ -661,15 +619,41 @@ function jsonSafeFromMap(map: Map<string, unknown>): Readonly<Record<string, unk
   return out;
 }
 
-/** Deterministic per-entity seed: FNV-1a hash of entityId XOR'd with
- *  the engine's base seed. Same game → same draws every time. */
-function deriveSeed(base: number, entityId: string): number {
-  let h = base >>> 0;
-  for (let i = 0; i < entityId.length; i++) {
-    h = ((h ^ entityId.charCodeAt(i)) * 16777619) >>> 0;
-  }
-  return h;
+/** Common shape for "what strategy + params should I run for this
+ *  spec source?" Used for both standalone bot entities and groups. */
+interface SourceSpec {
+  readonly strategy?: AnyBotStrategy | undefined;
+  readonly strategyId?: string | null | undefined;
+  readonly params?: Readonly<Record<string, unknown>> | null | undefined;
+  readonly config?: import("./config").WireBotConfigSpec | undefined;
+  readonly seed?: number | undefined;
 }
+
+/** Resolve a spec source into (strategy, params, seed) ready to
+ *  instantiate. Returns null if the source declares nothing runnable
+ *  (e.g. strategyId is unset and config is missing). Throws on
+ *  validation errors (unknown strategy id, invalid params, both
+ *  strategy and config set). */
+function resolveSource(
+  strategies: Readonly<Record<string, AnyBotStrategy>>,
+  baseSeed: number,
+  keyForSeed: string,
+  src: SourceSpec,
+): { strategy: AnyBotStrategy; params: Params; seed: number } | null {
+  const seed = src.seed ?? deriveSeed(baseSeed, keyForSeed);
+  const hasStrategy = !!(src.strategy || src.strategyId);
+  if (src.config && hasStrategy) throw new Error("specify exactly one of strategy / config");
+  if (src.config) {
+    const profiles = drawProfilesFromWire(src.config, strategies, makeRng(seed));
+    return { strategy: multiProfileBot({ seed, profiles }), params: Object.freeze({}), seed };
+  }
+  const strategy = src.strategy ?? (src.strategyId ? strategies[src.strategyId] : undefined);
+  if (!strategy) return null;
+  const resolved = resolveParams(strategy.paramsSchema, src.params ?? null);
+  if (!resolved.ok) throw new Error(`params invalid: ${resolved.reason}`);
+  return { strategy, params: resolved.params, seed };
+}
+
 
 function bookFingerprint(book: OrderBook): string {
   const bb = book.bids[0];

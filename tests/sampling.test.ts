@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { sample, sampleAll, type Distribution } from "../engine/sampling";
-import { makeRng } from "../engine/rng";
+import { deriveSeed, makeRng } from "../engine/rng";
 
 function drawMany(d: Distribution, seed: number, n: number): number[] {
   const rng = makeRng(seed);
@@ -104,6 +104,13 @@ describe("sampling", () => {
     expect(() =>
       sample({ kind: "categorical", choices: [{ value: 1, weight: 0 }] }, rng),
     ).toThrow();
+  });
+
+  it("deriveSeed is deterministic and keyed-distinct", () => {
+    expect(deriveSeed(0, "AB")).toBe(deriveSeed(0, "AB"));
+    expect(deriveSeed(0, "AB")).not.toBe(deriveSeed(0, "CD"));
+    expect(deriveSeed(1, "AB")).not.toBe(deriveSeed(0, "AB"));
+    expect(Number.isInteger(deriveSeed(42, "Bot1"))).toBe(true);
   });
 
   it("sampleAll draws each schema field exactly once", () => {

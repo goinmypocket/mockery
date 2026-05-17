@@ -154,7 +154,8 @@ function recordFills(state: State, fills: ReadonlyArray<{ qty: number }>): void 
 
 function closeInstance(sub: SubBotContext, state: State): void {
   state.phase = "done";
-  state.ema.stop();
+  // ema.stop() is redundant — sub.close() cancels every timer scheduled
+  // through subCtx.setTimer, which includes the EMA's 1s ticker.
   for (const o of sub.myOpenOrders()) {
     if (o.contractId === state.cid && sub.myOrderIds.has(o.id)) sub.cancel(o.id);
   }

@@ -139,6 +139,8 @@ export function volumeEma(
   halfLifeVolume: number,
   opts?: { seed?: EmaSeed },
 ): VolumeEmaHandle {
+  // State lives in ctx.local for parity with timeEma — surfaces in
+  // the action log's bot-state snapshot so a replay can see the EMA.
   const state = newEma();
   seedState(state, opts?.seed);
   ctx.local.set(VOLUME_STATE + key, state);

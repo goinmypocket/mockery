@@ -161,11 +161,7 @@ export function multiProfileBot(config: SpawnerConfig): BotStrategy {
     });
   }
 
-  function fanOut<E extends keyof BotStrategy>(
-    hook: E,
-    invoke: (s: BotStrategy, ctx: SubBotContext) => void,
-  ): void {
-    void hook;
+  function fanOut(invoke: (s: BotStrategy, ctx: SubBotContext) => void): void {
     for (const inst of instances) {
       if (inst.closed) continue;
       invoke(inst.profile.strategy, inst.subCtx);
@@ -182,12 +178,12 @@ export function multiProfileBot(config: SpawnerConfig): BotStrategy {
         else scheduleNextArrival(p);
       }
     },
-    onMarketData(ctx, snap) { parentCtx = ctx; fanOut("onMarketData", (s, c) => s.onMarketData?.(c, snap)); },
-    onBookUpdate(ctx, cid)  { parentCtx = ctx; fanOut("onBookUpdate",  (s, c) => s.onBookUpdate?.(c, cid)); },
-    onTrade(ctx, trade)     { parentCtx = ctx; fanOut("onTrade",       (s, c) => s.onTrade?.(c, trade)); },
-    onMyFill(ctx, trade, side) { parentCtx = ctx; fanOut("onMyFill", (s, c) => s.onMyFill?.(c, trade, side)); },
-    onEvent(ctx, event)     { parentCtx = ctx; fanOut("onEvent",       (s, c) => s.onEvent?.(c, event)); },
-    onPhaseChange(ctx, oldP, newP) { parentCtx = ctx; fanOut("onPhaseChange", (s, c) => s.onPhaseChange?.(c, oldP, newP)); },
+    onMarketData(ctx, snap) { parentCtx = ctx; fanOut((s, c) => s.onMarketData?.(c, snap)); },
+    onBookUpdate(ctx, cid)  { parentCtx = ctx; fanOut((s, c) => s.onBookUpdate?.(c, cid)); },
+    onTrade(ctx, trade)     { parentCtx = ctx; fanOut((s, c) => s.onTrade?.(c, trade)); },
+    onMyFill(ctx, trade, side) { parentCtx = ctx; fanOut((s, c) => s.onMyFill?.(c, trade, side)); },
+    onEvent(ctx, event)     { parentCtx = ctx; fanOut((s, c) => s.onEvent?.(c, event)); },
+    onPhaseChange(ctx, oldP, newP) { parentCtx = ctx; fanOut((s, c) => s.onPhaseChange?.(c, oldP, newP)); },
     onGameOver(ctx, result) {
       parentCtx = ctx;
       for (const inst of instances) {
