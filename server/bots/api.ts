@@ -53,10 +53,14 @@ export type AnyBotStrategy = BotStrategy<Params>;
 export interface BotGroupConfig {
   readonly groupId: string;
   readonly entityIds: readonly string[];
-  readonly strategy: AnyBotStrategy;
+  /** Provide exactly one of `strategy` (standalone) or `config` (the
+   *  orchestrator builds a multiProfileBot from a wire spec). */
+  readonly strategy?: AnyBotStrategy;
   readonly params?: Params | null;
-  /** Seed for the entity-picker RNG. If absent, derived
-   *  deterministically from `groupId`. */
+  readonly config?: import("./config").WireBotConfigSpec;
+  /** Seed for the entity-picker RNG (and the spawner RNG when
+   *  `config` is set). If absent, derived deterministically from
+   *  `groupId`. */
   readonly seed?: number;
 }
 

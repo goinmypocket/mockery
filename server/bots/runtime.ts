@@ -134,10 +134,22 @@ export class BotOrchestrator {
   private onEnterPlaying(): void {
     const state = this.session.getEngineState();
 
-    // Instantiate groups first; remember the entities they own so
-    // standalone iteration skips them.
+    // Instantiate groups first (constructor-time + state-side); remember
+    // the entities they own so standalone iteration skips them.
     const claimed = new Set<string>();
-    for (const g of this.groups) {
+    const groupsFromState = state.botGroups.map((g): import("./api").BotGroupConfig => {
+      const strat = g.strategyId ? this.strategies[g.strategyId] : undefined;
+      const wire = g.config as unknown as import("./config").WireBotConfigSpec | undefined;
+      return {
+        groupId: g.groupId,
+        entityIds: g.entityIds,
+        ...(strat ? { strategy: strat } : {}),
+        ...(g.params ? { params: g.params as Params } : {}),
+        ...(wire ? { config: wire } : {}),
+        ...(typeof g.seed === "number" ? { seed: g.seed } : {}),
+      };
+    });
+    for (const g of [...this.groups, ...groupsFromState]) {
       try {
         this.instantiateGroup(g);
         for (const eid of g.entityIds) claimed.add(eid);
@@ -342,18 +354,37 @@ export class BotOrchestrator {
   private instantiateGroup(g: import("./api").BotGroupConfig): void {
     if (g.entityIds.length === 0) throw new Error("group has no entityIds");
     const state = this.session.getEngineState();
+    const seed = g.seed ?? deriveSeed(state.options.seed, g.groupId);
+
+    let strategy: AnyBotStrategy;
+    let params: Params;
+    if (g.strategy && g.config) {
+      throw new Error("group must specify exactly one of strategy / config");
+    } else if (g.strategy) {
+      strategy = g.strategy;
+      const resolved = resolveParams(strategy.paramsSchema, g.params ?? null);
+      if (!resolved.ok) throw new Error(`params invalid: ${resolved.reason}`);
+      params = resolved.params;
+    } else if (g.config) {
+      const profiles = drawProfilesFromWire(g.config, this.strategies, makeRng(seed));
+      strategy = multiProfileBot({ seed, profiles });
+      params = Object.freeze({});
+    } else {
+      throw new Error("group needs either strategy or config");
+    }
+
     const inst: BotInstance = {
       entityId: g.groupId,
       entityIds: g.entityIds.slice(),
-      strategy: g.strategy,
-      params: g.params ?? Object.freeze({}),
+      strategy,
+      params,
       local: new Map(),
       timers: new Set(),
       errorCount: 0,
       context: undefined as unknown as BotContext,
       lastPhase: state.phase,
       bookFingerprints: this.computeBookFingerprints(),
-      routingRng: makeRng(g.seed ?? deriveSeed(0, g.groupId)),
+      routingRng: makeRng(seed),
     };
     this.instances.set(g.groupId, inst);
     this.refreshContext(inst);

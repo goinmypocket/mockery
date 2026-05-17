@@ -9,6 +9,7 @@ import { MockerySession } from "../server/MockerySession";
 import { FakeClock } from "../server/clock";
 import { BotOrchestrator } from "../server/bots/runtime";
 import type { BotStrategy, BotGroupConfig } from "../server/bots/api";
+import { STRATEGIES } from "../server/bots/registry";
 import { asTableId, asUserId, type UserId } from "../shared/ids";
 import { participantKey, type ResolvedOptions } from "../shared/types";
 
@@ -157,6 +158,100 @@ describe("BotGroup multi-code routing", () => {
     expect(observed).not.toBeNull();
     expect(observed!.myCode).toBe("XX");
     expect(observed!.myCodes).toEqual(["XX", "YY", "ZZ"]);
+  });
+
+  it("group with config builds a multiProfileBot spawner internally", async () => {
+    const { s, clock } = newGame();
+    
+    new BotOrchestrator(s, clock, STRATEGIES, {
+      groups: [{
+        groupId: "G", entityIds: ["AA", "BB"],
+        config: {
+          strategies: [{
+            strategyId: "natural-player",
+            count: { kind: "constant", value: 1 },
+            spawn: { mode: "permanent" },
+            lagMs: { kind: "constant", value: 0 },
+            scope: "instance",
+            params: {
+              targetQty: { kind: "constant", value: 4 },
+              tightSpreadFrac: { kind: "constant", value: 0.5 },
+              widthInitTicks: { kind: "constant", value: 3 },
+              historicMedianGuard: { kind: "constant", value: 1.5 },
+              urgencyDecayPerSec: { kind: "constant", value: 0 },
+              idleSecondsBeforeDecay: { kind: "constant", value: 1 },
+              urgentPennyIntervalMs: { kind: "constant", value: 1000 },
+              panicThreshold: { kind: "constant", value: 1.5 },
+              panicEmaHalfLifeSec: { kind: "constant", value: 5 },
+            },
+          }],
+        },
+      }],
+    });
+    setupBots(s, ["AA", "BB"]);
+    const cid = s.getEngineState().contracts[0]!.id;
+    s.handleGameMessage(ALICE, { type: "PLACE_LIMIT", contractId: cid, side: "buy",  qty: 10, price: 95  });
+    s.handleGameMessage(BOB,   { type: "PLACE_LIMIT", contractId: cid, side: "sell", qty: 10, price: 105 });
+    clock.advance(100);
+
+    const posAA = s.getEngineState().positions[participantKey({ kind: "bot", entityId: "AA" })]?.[cid] ?? 0;
+    const posBB = s.getEngineState().positions[participantKey({ kind: "bot", entityId: "BB" })]?.[cid] ?? 0;
+    expect(posAA + posBB).toBe(4);
+  });
+
+  it("SETUP_SET_BOT_GROUP wire surface: groups stored in state are consumed", async () => {
+    const { s, clock } = newGame();
+    
+    new BotOrchestrator(s, clock, STRATEGIES);     // no constructor groups
+
+    s.handleGameMessage(HOST, {
+      type: "SETUP_ADD_CONTRACT", name: "Sum", description: "",
+      payoffSource: "return H.sum(cards);",
+    });
+    s.handleGameMessage(HOST, { type: "SETUP_QUEUE_APPEND", event: { type: "ROTATE_INFORMED" } });
+    s.handleGameMessage(HOST, { type: "SETUP_SET_BOT_ENTITIES", entityIds: ["AA", "BB"] });
+    s.handleGameMessage(HOST, {
+      type: "SETUP_SET_BOT_GROUP",
+      groupId: "G1",
+      entityIds: ["AA", "BB"],
+      strategyId: "random-quoter",
+      seed: 5,
+    });
+    s.handleGameMessage(HOST, { type: "START_TRADING" });
+    clock.advance(100);
+
+    // random-quoter quotes both sides — should see resting orders under
+    // at least one of AA or BB (routing is random per quote).
+    const cid = s.getEngineState().contracts[0]!.id;
+    const allOrders = Object.values(s.getEngineState().books[cid]!.ordersById);
+    const myOrders = allOrders.filter((o) =>
+      o.participant.kind === "bot" && (o.participant.entityId === "AA" || o.participant.entityId === "BB"));
+    expect(myOrders.length).toBeGreaterThan(0);
+  });
+
+  it("SETUP_REMOVE_BOT_GROUP removes the group", () => {
+    const { s } = newGame();
+    s.handleGameMessage(HOST, { type: "SETUP_SET_BOT_ENTITIES", entityIds: ["AA", "BB"] });
+    s.handleGameMessage(HOST, {
+      type: "SETUP_SET_BOT_GROUP", groupId: "G", entityIds: ["AA", "BB"],
+      strategyId: "noop",
+    });
+    expect(s.getEngineState().botGroups).toHaveLength(1);
+    s.handleGameMessage(HOST, { type: "SETUP_REMOVE_BOT_GROUP", groupId: "G" });
+    expect(s.getEngineState().botGroups).toHaveLength(0);
+  });
+
+  it("SETUP_SET_BOT_GROUP rejects unknown entityIds", () => {
+    const { s } = newGame();
+    s.handleGameMessage(HOST, { type: "SETUP_SET_BOT_ENTITIES", entityIds: ["AA"] });
+    s.handleGameMessage(HOST, {
+      type: "SETUP_SET_BOT_GROUP", groupId: "G", entityIds: ["AA", "NOPE"],
+      strategyId: "noop",
+    });
+    expect(s.getEngineState().botGroups).toHaveLength(0);
+    const lastReject = s.getEngineState().actionLog.find((e) =>
+      e.type === "SETUP_SET_BOT_GROUP" && !e.outcome.ok);
+    expect(lastReject).toBeDefined();
   });
 
   it("same seed → same routing sequence (replay-stable)", () => {

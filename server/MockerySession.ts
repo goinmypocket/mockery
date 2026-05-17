@@ -46,6 +46,7 @@ import {
   type ActionActor,
   type ActionLogEntry,
   type BotEntity,
+  type BotGroup,
   type BotStateSnapshot,
   type CodeMode,
   type ContractDef,
@@ -159,7 +160,9 @@ export interface MockerySave {
     readonly entityId: string;
     readonly strategyId: string | null;
     readonly params?: Readonly<Record<string, unknown>> | null;
+    readonly config?: Readonly<Record<string, unknown>> | null;
   }>;
+  readonly botGroups?: readonly BotGroup[];
   readonly displayNames?: Readonly<Record<string, string>>;
   readonly codeBook?: Readonly<Record<string, string>>;
   readonly books?: Readonly<Record<string, SavedBook>>;
@@ -434,6 +437,8 @@ export class MockerySession implements GameSession<MockerySave> {
         case "SETUP_SET_BOT_ENTITIES":     return this.onSetupSetBotEntities(userId, msg);
         case "SETUP_BIND_BOT_STRATEGY":    return this.onSetupBindBotStrategy(userId, msg);
         case "SETUP_SET_BOT_CONFIG":       return this.onSetupSetBotConfig(userId, msg);
+        case "SETUP_SET_BOT_GROUP":        return this.onSetupSetBotGroup(userId, msg);
+        case "SETUP_REMOVE_BOT_GROUP":     return this.onSetupRemoveBotGroup(userId, msg);
         case "SETUP_SET_EVENT_MODE":       return this.onSetupSetEventMode(userId, msg);
         case "SETUP_SET_GAME_OPTIONS":     return this.onSetupSetGameOptions(userId, msg);
         case "SETUP_SET_CODE":             return this.onSetupSetCode(userId, msg);
@@ -684,6 +689,60 @@ export class MockerySession implements GameSession<MockerySave> {
         : null;
     this.state.botEntities[idx] = { ...this.state.botEntities[idx]!, config };
     this.logHostSuccess(userId, "SETUP_SET_BOT_CONFIG", { entityId });
+    this.broadcastSnapshot();
+  }
+
+  private onSetupSetBotGroup(userId: UserId, msg: Record<string, unknown>): void {
+    if (!this.requireSetup(userId, msg)) return;
+    const groupId = String(msg["groupId"] ?? "");
+    if (!groupId) return this.reject(userId, msg, "groupId required");
+    const entityIdsRaw = msg["entityIds"];
+    if (!Array.isArray(entityIdsRaw) || entityIdsRaw.length === 0) {
+      return this.reject(userId, msg, "entityIds must be a non-empty array");
+    }
+    const entityIds = entityIdsRaw.filter((x): x is string => typeof x === "string");
+    if (entityIds.length !== entityIdsRaw.length) {
+      return this.reject(userId, msg, "entityIds must all be strings");
+    }
+    // Every entityId must already be a registered bot entity.
+    const known = new Set(this.state.botEntities.map((e) => e.entityId));
+    for (const eid of entityIds) {
+      if (!known.has(eid)) return this.reject(userId, msg, `unknown entityId ${eid}`);
+    }
+    const rawStrategyId = msg["strategyId"];
+    const strategyId =
+      rawStrategyId === undefined || rawStrategyId === null ? null : String(rawStrategyId);
+    const rawConfig = msg["config"];
+    const config: Readonly<Record<string, unknown>> | null =
+      rawConfig && typeof rawConfig === "object" && !Array.isArray(rawConfig)
+        ? { ...(rawConfig as Record<string, unknown>) }
+        : null;
+    if (!strategyId && !config) return this.reject(userId, msg, "strategyId or config required");
+    if (strategyId && config) return this.reject(userId, msg, "specify only one of strategyId / config");
+    const rawParams = msg["params"];
+    const params: Readonly<Record<string, unknown>> | null =
+      rawParams && typeof rawParams === "object" && !Array.isArray(rawParams)
+        ? { ...(rawParams as Record<string, unknown>) }
+        : null;
+    const seed = msg["seed"];
+    const group: BotGroup = {
+      groupId, entityIds, strategyId, params, config,
+      ...(typeof seed === "number" ? { seed } : {}),
+    };
+    const idx = this.state.botGroups.findIndex((g) => g.groupId === groupId);
+    if (idx >= 0) this.state.botGroups[idx] = group;
+    else this.state.botGroups.push(group);
+    this.logHostSuccess(userId, "SETUP_SET_BOT_GROUP", { groupId, entityIds });
+    this.broadcastSnapshot();
+  }
+
+  private onSetupRemoveBotGroup(userId: UserId, msg: Record<string, unknown>): void {
+    if (!this.requireSetup(userId, msg)) return;
+    const groupId = String(msg["groupId"] ?? "");
+    const idx = this.state.botGroups.findIndex((g) => g.groupId === groupId);
+    if (idx < 0) return this.reject(userId, msg, "no such group");
+    this.state.botGroups.splice(idx, 1);
+    this.logHostSuccess(userId, "SETUP_REMOVE_BOT_GROUP", { groupId });
     this.broadcastSnapshot();
   }
 
@@ -1470,6 +1529,7 @@ export class MockerySession implements GameSession<MockerySave> {
       })),
       eventQueue: this.state.eventQueue.map((e) => ({ ...e })),
       botEntities: this.state.botEntities.map((b) => ({ ...b })),
+      botGroups: this.state.botGroups.map((g) => ({ ...g })),
       displayNames: { ...this.state.displayNames },
       codeBook: { ...this.state.codeBook },
       books,
@@ -1530,6 +1590,7 @@ export class MockerySession implements GameSession<MockerySave> {
     })) as ContractDef[];
     this.state.eventQueue = (blob.eventQueue ?? []).map((e) => ({ ...e })) as EventQueueEntry[];
     this.state.botEntities = (blob.botEntities ?? []).map((b) => ({ ...b }));
+    this.state.botGroups = (blob.botGroups ?? []).map((g) => ({ ...g }));
     this.state.displayNames = { ...(blob.displayNames ?? {}) };
     this.state.codeBook = { ...(blob.codeBook ?? {}) };
     this.state.positions = {};

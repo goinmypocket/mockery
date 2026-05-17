@@ -9,6 +9,7 @@
 import type {
   ActionLogEntry,
   BotEntity,
+  BotGroup,
   CodeBook,
   ContractDef,
   EventQueueEntry,
@@ -93,6 +94,10 @@ export interface GameState {
   /** Bot entities configured for this game. */
   botEntities: BotEntity[];
 
+  /** Multi-code routing groups. Each group binds one strategy
+   *  instance to several `botEntities`. See `BotGroup` in shared/types. */
+  botGroups: BotGroup[];
+
   /** Display name per participant, keyed by participantKey. Source for
    *  the `code → display name` mapping that may be redacted. Player
    *  names come from the platform; bot "names" are their entityIds. */
@@ -155,6 +160,7 @@ export function createInitialState(args: {
     contracts: [],
     eventQueue: [],
     botEntities: [],
+    botGroups: [],
     displayNames: {},
     codeBook: {},
     books: {},

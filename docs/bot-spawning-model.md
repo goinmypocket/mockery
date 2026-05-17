@@ -189,3 +189,6 @@ test fixtures and any saved games will need migration.
 | Wire-format `WireBotConfigSpec` + `resolveWireSpec`/`drawProfilesFromWire` | landed |
 | Session integration: `SETUP_SET_BOT_CONFIG` + orchestrator auto-spawner-build | landed |
 | Multi-code routing via `BotGroupConfig` (orchestrator-side) | landed |
+| `BotGroupConfig.config` (group hosts a multiProfileBot spawner) | landed |
+| `SETUP_SET_BOT_GROUP` / `SETUP_REMOVE_BOT_GROUP` wire surface | landed |
+| Per-strategy docs in `docs/bots/` | landed |

@@ -12,8 +12,8 @@ player-facing UI), and `bot-spawning-model.md` (one layer above:
 how a single bot player runs many concurrent, stochastically-spawned
 parametrised instances of strategies — read that doc for the
 **Strategy / Profile / Instance / Bot** vocabulary and the
-parameter-distribution surface). Per-strategy specs live in
-`docs/bots/<strategy>.md`.
+parameter-distribution surface). Per-strategy specs live in `docs/bots/<strategy>.md` — see
+`docs/bots/README.md` for the index.
 
 > **Status:** v0.1 of the bot API. The interface is stable in
 > intent; concrete TypeScript names are subject to small renames

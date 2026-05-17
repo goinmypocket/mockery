@@ -182,6 +182,19 @@ export interface BotEntity {
   readonly config?: Readonly<Record<string, unknown>> | null;
 }
 
+/** Multi-code routing group. References engine entities by id; the
+ *  orchestrator builds one strategy instance per group at game start.
+ *  Either `strategyId` (standalone) or `config` (multi-profile spawner)
+ *  must be set. See `docs/bot-spawning-model.md` §6. */
+export interface BotGroup {
+  readonly groupId: string;
+  readonly entityIds: readonly string[];
+  readonly strategyId?: string | null;
+  readonly params?: Readonly<Record<string, unknown>> | null;
+  readonly config?: Readonly<Record<string, unknown>> | null;
+  readonly seed?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Action log — every play-phase action with the bot state snapshot taken
 // right after it ran. Lets a replay viewer see what each bot "knew" /
