@@ -169,5 +169,5 @@ test fixtures and any saved games will need migration.
 | Per-instance fill attribution (`Trade.restingOrderId`) | landed |
 | `drawProfiles(BotConfigSpec, rng)` programmatic API | landed |
 | Wire-format `WireBotConfigSpec` + `resolveWireSpec`/`drawProfilesFromWire` | landed |
+| Session integration: `SETUP_SET_BOT_CONFIG` + orchestrator auto-spawner-build | landed |
 | Multi-code routing (engine + orchestrator) | **next** |
-| Session integration: `SETUP_SET_BOT_CONFIG` + auto-spawner-build | next |

@@ -33,6 +33,9 @@ import type {
 } from "../../shared/types";
 import { participantKey } from "../../shared/types";
 import type { BotStateSnapshot } from "../../shared/types";
+import { makeRng } from "../../engine/rng";
+import { drawProfilesFromWire, type WireBotConfigSpec } from "./config";
+import { multiProfileBot } from "./spawning";
 import {
   type AnyBotStrategy,
   type MarketSnapshot,
@@ -123,6 +126,20 @@ export class BotOrchestrator {
   private onEnterPlaying(): void {
     const state = this.session.getEngineState();
     for (const e of state.botEntities) {
+      // Config takes precedence: build a multiProfileBot spawner
+      // deterministically from (options.seed XOR entityId).
+      if (e.config) {
+        try {
+          const seed = deriveSeed(state.options.seed, e.entityId);
+          const wire = e.config as unknown as WireBotConfigSpec;
+          const profiles = drawProfilesFromWire(wire, this.strategies, makeRng(seed));
+          const spawner = multiProfileBot({ seed, profiles });
+          this.instantiate(e.entityId, spawner, Object.freeze({}));
+        } catch (err) {
+          console.warn(`[bot:${e.entityId}] config invalid (${(err as Error).message}); skipping`);
+        }
+        continue;
+      }
       if (!e.strategyId) continue;
       const strat = this.strategies[e.strategyId];
       if (!strat) continue;
@@ -540,6 +557,16 @@ function jsonSafeFromMap(map: Map<string, unknown>): Readonly<Record<string, unk
   const out: Record<string, unknown> = {};
   for (const [k, v] of map) out[k] = jsonSafeValue(v);
   return out;
+}
+
+/** Deterministic per-entity seed: FNV-1a hash of entityId XOR'd with
+ *  the engine's base seed. Same game → same draws every time. */
+function deriveSeed(base: number, entityId: string): number {
+  let h = base >>> 0;
+  for (let i = 0; i < entityId.length; i++) {
+    h = ((h ^ entityId.charCodeAt(i)) * 16777619) >>> 0;
+  }
+  return h;
 }
 
 function bookFingerprint(book: OrderBook): string {

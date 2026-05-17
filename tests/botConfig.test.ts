@@ -203,3 +203,91 @@ describe("WireBotConfigSpec / resolveWireSpec", () => {
     expect(drawProfilesFromWire(back, { "noop-cfg": noop }, makeRng(1))).toHaveLength(2);
   });
 });
+
+describe("SETUP_SET_BOT_CONFIG + orchestrator auto-build", () => {
+  function setup() {
+    const clock = new FakeClock(1_000_000);
+    const opts: ResolvedOptions = {
+      cardValues: [1, 2, 9, 10], copiesPerValue: 4,
+      informedSeats: 3, uninformedSeats: 0, publicSlots: 0,
+      eventMode: "manual", eventIntervalMin: 60, eventIntervalMax: 60,
+      endGameGraceSec: 0, seed: 1,
+      codeMode: "alpha", enforceCaseByRole: false,
+      identityReveal: "all", identityRevealList: [],
+    };
+    const s = new MockerySession({ tableId: asTableId("t1"), hostUserId: HOST, options: opts, clock });
+    s.claimSeat(ALICE, 0, { displayName: "Alice" });
+    s.claimSeat(BOB,   1, { displayName: "Bob" });
+    s.claimSeat(CAROL, 2, { displayName: "Carol" });
+    s.startGame(HOST);
+    return { s, clock };
+  }
+
+  const wire = {
+    strategies: [{
+      strategyId: "natural-player",
+      count: { kind: "constant", value: 1 },
+      spawn: { mode: "permanent" },
+      lagMs: { kind: "constant", value: 0 },
+      scope: "instance",
+      params: {
+        targetQty: { kind: "constant", value: 3 },
+        tightSpreadFrac: { kind: "constant", value: 0.5 },
+        widthInitTicks: { kind: "constant", value: 3 },
+        historicMedianGuard: { kind: "constant", value: 1.5 },
+        urgencyDecayPerSec: { kind: "constant", value: 0 },
+        idleSecondsBeforeDecay: { kind: "constant", value: 1 },
+        urgentPennyIntervalMs: { kind: "constant", value: 1000 },
+        panicThreshold: { kind: "constant", value: 1.5 },
+        panicEmaHalfLifeSec: { kind: "constant", value: 5 },
+      },
+    }],
+  };
+
+  it("orchestrator builds a spawner from the entity's config and runs it", async () => {
+    const { s, clock } = setup();
+    const { STRATEGIES } = await import("../server/bots/registry");
+    new BotOrchestrator(s, clock, STRATEGIES);
+
+    s.handleGameMessage(HOST, {
+      type: "SETUP_ADD_CONTRACT", name: "Sum", description: "",
+      payoffSource: "return H.sum(cards);",
+    });
+    s.handleGameMessage(HOST, { type: "SETUP_QUEUE_APPEND", event: { type: "ROTATE_INFORMED" } });
+    s.handleGameMessage(HOST, { type: "SETUP_SET_BOT_ENTITIES", entityIds: ["XY"] });
+    s.handleGameMessage(HOST, { type: "SETUP_SET_BOT_CONFIG", entityId: "XY", config: wire });
+    s.handleGameMessage(HOST, { type: "START_TRADING" });
+
+    const cid = s.getEngineState().contracts[0]!.id;
+    s.handleGameMessage(ALICE, { type: "PLACE_LIMIT", contractId: cid, side: "buy",  qty: 10, price: 95  });
+    s.handleGameMessage(BOB,   { type: "PLACE_LIMIT", contractId: cid, side: "sell", qty: 10, price: 105 });
+    clock.advance(100);
+
+    const botKey = participantKey({ kind: "bot", entityId: "XY" });
+    expect(s.getEngineState().positions[botKey]?.[cid] ?? 0).toBe(3);
+  });
+
+  it("invalid strategyId in config is logged-and-skipped, not thrown", async () => {
+    const { s, clock } = setup();
+    const { STRATEGIES } = await import("../server/bots/registry");
+    new BotOrchestrator(s, clock, STRATEGIES);
+    const origWarn = console.warn; const warns: string[] = []; console.warn = (m: string) => warns.push(m);
+    try {
+      s.handleGameMessage(HOST, {
+        type: "SETUP_ADD_CONTRACT", name: "Sum", description: "",
+        payoffSource: "return H.sum(cards);",
+      });
+      s.handleGameMessage(HOST, { type: "SETUP_QUEUE_APPEND", event: { type: "ROTATE_INFORMED" } });
+      s.handleGameMessage(HOST, { type: "SETUP_SET_BOT_ENTITIES", entityIds: ["XY"] });
+      s.handleGameMessage(HOST, {
+        type: "SETUP_SET_BOT_CONFIG", entityId: "XY",
+        config: { strategies: [{ ...wire.strategies[0], strategyId: "does-not-exist" }] },
+      });
+      s.handleGameMessage(HOST, { type: "START_TRADING" });
+      clock.advance(100);
+    } finally {
+      console.warn = origWarn;
+    }
+    expect(warns.some((w) => w.includes("unknown strategyId"))).toBe(true);
+  });
+});

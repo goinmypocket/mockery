@@ -174,6 +174,12 @@ export interface BotEntity {
    *  binding a strategy; multiple bot entities can share the same
    *  strategy with different params. */
   readonly params?: Readonly<Record<string, unknown>> | null;
+  /** Multi-profile spawner config (a `WireBotConfigSpec` from
+   *  `server/bots/config.ts`, stored opaquely here to avoid pulling
+   *  bot types into shared/). When set, the orchestrator builds a
+   *  `multiProfileBot` for this entity at game start and ignores
+   *  `strategyId` / `params`. */
+  readonly config?: Readonly<Record<string, unknown>> | null;
 }
 
 // ---------------------------------------------------------------------------

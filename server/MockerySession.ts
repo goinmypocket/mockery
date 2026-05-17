@@ -433,6 +433,7 @@ export class MockerySession implements GameSession<MockerySave> {
         case "SETUP_IMPORT_CONTRACT":      return this.onSetupImportContract(userId, msg);
         case "SETUP_SET_BOT_ENTITIES":     return this.onSetupSetBotEntities(userId, msg);
         case "SETUP_BIND_BOT_STRATEGY":    return this.onSetupBindBotStrategy(userId, msg);
+        case "SETUP_SET_BOT_CONFIG":       return this.onSetupSetBotConfig(userId, msg);
         case "SETUP_SET_EVENT_MODE":       return this.onSetupSetEventMode(userId, msg);
         case "SETUP_SET_GAME_OPTIONS":     return this.onSetupSetGameOptions(userId, msg);
         case "SETUP_SET_CODE":             return this.onSetupSetCode(userId, msg);
@@ -668,6 +669,21 @@ export class MockerySession implements GameSession<MockerySave> {
         : null;
     this.state.botEntities[idx] = { entityId, strategyId, params };
     this.logHostSuccess(userId, "SETUP_BIND_BOT_STRATEGY", { entityId, strategyId, params });
+    this.broadcastSnapshot();
+  }
+
+  private onSetupSetBotConfig(userId: UserId, msg: Record<string, unknown>): void {
+    if (!this.requireSetup(userId, msg)) return;
+    const entityId = String(msg["entityId"] ?? "");
+    const idx = this.state.botEntities.findIndex((e) => e.entityId === entityId);
+    if (idx < 0) return this.reject(userId, msg, "no such entity");
+    const raw = msg["config"];
+    const config: Readonly<Record<string, unknown>> | null =
+      raw && typeof raw === "object" && !Array.isArray(raw)
+        ? { ...(raw as Record<string, unknown>) }
+        : null;
+    this.state.botEntities[idx] = { ...this.state.botEntities[idx]!, config };
+    this.logHostSuccess(userId, "SETUP_SET_BOT_CONFIG", { entityId });
     this.broadcastSnapshot();
   }
 
