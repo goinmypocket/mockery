@@ -141,6 +141,12 @@ export interface Trade {
   readonly price: number;
   readonly qty: number;
   readonly aggressor: "buyer" | "seller";
+  /** OrderId of the resting order this trade hit. The aggressor's
+   *  fills come back synchronously from `placeLimit` / `placeIoc`, so
+   *  only the resting side needs to be tagged here for later
+   *  attribution via `onMyFill`. Legacy saves that predate this field
+   *  hydrate with a synthetic sentinel id. */
+  readonly restingOrderId: OrderId;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,4 +168,44 @@ export type GameEvent =
 export interface BotEntity {
   readonly entityId: string;
   readonly strategyId: string | null;
+  /** Per-instance tunable parameters, validated against the
+   *  strategy's `paramsSchema` at instantiation time. Null means
+   *  "use the strategy's schema defaults". The host sets this when
+   *  binding a strategy; multiple bot entities can share the same
+   *  strategy with different params. */
+  readonly params?: Readonly<Record<string, unknown>> | null;
+}
+
+// ---------------------------------------------------------------------------
+// Action log — every play-phase action with the bot state snapshot taken
+// right after it ran. Lets a replay viewer see what each bot "knew" /
+// was about to do at the moment of each action.
+// ---------------------------------------------------------------------------
+
+/** Bot scratchpad + tunables captured at the moment an action was logged.
+ *  `local` is the strategy's `ctx.local` Map projected to a plain object
+ *  (non-JSON values are stringified). */
+export interface BotStateSnapshot {
+  readonly entityId: string;
+  readonly strategyId: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  readonly local: Readonly<Record<string, unknown>>;
+}
+
+export type ActionActor =
+  | { readonly kind: "player"; readonly userId: UserId }
+  | { readonly kind: "bot"; readonly entityId: string }
+  | { readonly kind: "system" };
+
+export interface ActionLogEntry {
+  readonly seq: number;
+  readonly ts: number;
+  readonly phase: number;
+  readonly actor: ActionActor;
+  readonly type: string;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly outcome:
+    | { readonly ok: true; readonly value?: Readonly<Record<string, unknown>> }
+    | { readonly ok: false; readonly reason: string };
+  readonly botStates: readonly BotStateSnapshot[];
 }

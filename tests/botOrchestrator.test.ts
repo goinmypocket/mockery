@@ -11,6 +11,7 @@ import { STRATEGIES } from "../server/bots/registry";
 import type { BotStrategy } from "../server/bots/api";
 import { asTableId, asUserId, type UserId } from "../shared/ids";
 import { participantKey, type ResolvedOptions } from "../shared/types";
+import { timeEma, volumeEma } from "../server/bots/helpers/fairvalue";
 
 const HOST = asUserId("host-uid");
 const ALICE = asUserId("alice-uid");
@@ -307,6 +308,206 @@ describe("BotOrchestrator", () => {
     expect(st.positions[botKey]![cid]).toBe(-3);
     expect(st.cash[aliceKey]).toBe(-36);
     expect(st.cash[botKey]).toBe(36);
+  });
+
+  it("action log captures every action with each live bot's params + local", () => {
+    const thinker: BotStrategy<{ readonly threshold: number }> = {
+      id: "thinker",
+      displayName: "Thinker",
+      paramsSchema: { threshold: { kind: "int", default: 5 } },
+      onStart(ctx) {
+        ctx.local.set("ticks", 0);
+        ctx.local.set("lastSeen", null);
+      },
+      onMarketData(ctx) {
+        ctx.local.set("ticks", (ctx.local.get("ticks") as number) + 1);
+        ctx.local.set("lastSeen", ctx.snapshot.ts);
+      },
+    };
+    const { s, clock } = newGame();
+    new BotOrchestrator(s, clock, { thinker });
+    configureAndStart(s, ["XY"], "thinker");
+
+    const cid = s.getEngineState().contracts[0]!.id;
+    s.handleGameMessage(ALICE, { type: "PLACE_LIMIT", contractId: cid, side: "buy", qty: 1, price: 10 });
+    s.submitBotIntent("XY", { type: "PLACE_LIMIT", contractId: cid, side: "sell", qty: 1, price: 11 });
+    s.handleGameMessage(HOST, { type: "FIRE_NEXT_EVENT" });
+    s.handleGameMessage(HOST, { type: "END_GAME" });
+
+    const log = s.getEngineState().actionLog;
+    const types = log.map((e) => `${e.actor.kind}:${e.type}`);
+    expect(types).toContain("player:PLACE_LIMIT");
+    expect(types).toContain("bot:PLACE_LIMIT");
+    expect(types).toContain("system:ROTATE_INFORMED");
+    expect(types).toContain("system:END_GAME");
+
+    // Seq numbers are monotonically increasing.
+    for (let i = 1; i < log.length; i++) {
+      expect(log[i]!.seq).toBeGreaterThan(log[i - 1]!.seq);
+    }
+
+    // Every entry while the bot is alive carries its state snapshot.
+    const playerPlace = log.find((e) => e.actor.kind === "player" && e.type === "PLACE_LIMIT")!;
+    const botState = playerPlace.botStates.find((b) => b.entityId === "XY");
+    expect(botState).toBeDefined();
+    expect(botState!.strategyId).toBe("thinker");
+    expect(botState!.params).toEqual({ threshold: 5 });
+    expect(botState!.local.ticks).toBeGreaterThanOrEqual(0);
+
+    // local evolves over time: a later entry must show >= ticks.
+    const botPlace = log.find((e) => e.actor.kind === "bot" && e.type === "PLACE_LIMIT")!;
+    const laterBotState = botPlace.botStates.find((b) => b.entityId === "XY")!;
+    expect(laterBotState.local.ticks as number).toBeGreaterThanOrEqual(
+      botState!.local.ticks as number,
+    );
+  });
+
+  it("action log captures setup-phase actions and rejected intents", () => {
+    const noop: BotStrategy = { id: "noop", displayName: "noop" };
+    const { s, clock } = newGame();
+    new BotOrchestrator(s, clock, { noop });
+    // Setup-phase host actions (these all run before START_TRADING)
+    s.handleGameMessage(HOST, {
+      type: "SETUP_ADD_CONTRACT", name: "Sum", description: "",
+      payoffSource: "return H.sum(cards);",
+    });
+    s.handleGameMessage(HOST, {
+      type: "SETUP_QUEUE_APPEND", event: { type: "ROTATE_INFORMED" },
+    });
+    s.handleGameMessage(HOST, { type: "SETUP_SET_BOT_ENTITIES", entityIds: ["XY"] });
+    // A non-host trying setup gets rejected:
+    s.handleGameMessage(ALICE, { type: "SETUP_RESHUFFLE_CODES" });
+    s.handleGameMessage(HOST, { type: "START_TRADING" });
+
+    const log = s.getEngineState().actionLog;
+    const successes = log.filter((e) => e.outcome.ok).map((e) => e.type);
+    const rejections = log.filter((e) => !e.outcome.ok).map((e) => e.type);
+
+    expect(successes).toEqual(
+      expect.arrayContaining([
+        "SETUP_ADD_CONTRACT",
+        "SETUP_QUEUE_APPEND",
+        "SETUP_SET_BOT_ENTITIES",
+        "START_TRADING",
+      ]),
+    );
+    expect(rejections).toContain("SETUP_RESHUFFLE_CODES");
+    const rejectedReshuffle = log.find(
+      (e) => e.type === "SETUP_RESHUFFLE_CODES" && !e.outcome.ok,
+    )!;
+    expect(rejectedReshuffle.actor.kind).toBe("player");
+    expect(rejectedReshuffle.outcome.ok).toBe(false);
+    if (!rejectedReshuffle.outcome.ok) {
+      expect(rejectedReshuffle.outcome.reason).toMatch(/host only/);
+    }
+  });
+
+  it("timeEma samples each second and decays weight when fairvalue is null", () => {
+    let nextSample: number | null = 10;
+    const handles: { ema?: ReturnType<typeof timeEma> } = {};
+    const spy: BotStrategy = {
+      id: "ema-spy",
+      displayName: "EMA Spy",
+      onStart(ctx) {
+        handles.ema = timeEma(ctx, "fv", 5, () => nextSample);
+      },
+    };
+    const { s, clock } = newGame();
+    new BotOrchestrator(s, clock, { "ema-spy": spy });
+    configureAndStart(s, ["XY"], "ema-spy");
+
+    // 3 seconds of constant fair value = 10 — EMA converges to 10.
+    clock.advance(3_000);
+    expect(handles.ema!.get()).toBeCloseTo(10, 5);
+    const weightAfterObs = handles.ema!.weight();
+    expect(weightAfterObs).toBeGreaterThan(0);
+
+    // Now 10 seconds of null — central value preserved, weight shrinks.
+    nextSample = null;
+    clock.advance(10_000);
+    expect(handles.ema!.get()).toBeCloseTo(10, 5);
+    expect(handles.ema!.weight()).toBeLessThan(weightAfterObs);
+  });
+
+  it("seeded EMAs start at the prior and shift toward observations", () => {
+    const handles: { time?: ReturnType<typeof timeEma>; vol?: ReturnType<typeof volumeEma> } = {};
+    const spy: BotStrategy = {
+      id: "seeded",
+      displayName: "Seeded",
+      onStart(ctx) {
+        handles.time = timeEma(ctx, "t", 5, () => 20, {
+          seed: { value: 10, weight: 1 },
+        });
+        handles.vol = volumeEma(ctx, "v", 100, {
+          seed: { value: 10, weight: 50 },
+        });
+      },
+    };
+    const { s, clock } = newGame();
+    new BotOrchestrator(s, clock, { seeded: spy });
+    configureAndStart(s, ["XY"], "seeded");
+
+    // Both EMAs read the prior before any tick / pump.
+    expect(handles.time!.get()).toBe(10);
+    expect(handles.vol!.get()).toBe(10);
+
+    // Drive the time EMA: 10s of value=20. EMA shifts above the prior.
+    clock.advance(10_000);
+    expect(handles.time!.get()).toBeGreaterThan(10);
+    expect(handles.time!.get()!).toBeLessThan(20);
+
+    // Drive the volume EMA: pump 50 shares @ 20. Now midway between 10 and 20.
+    handles.vol!.update(20, 50);
+    expect(handles.vol!.get()).toBeGreaterThan(10);
+    expect(handles.vol!.get()!).toBeLessThan(20);
+  });
+
+  it("volumeEma decays by trade size and leans toward the larger observation", () => {
+    const handles: { ema?: ReturnType<typeof volumeEma> } = {};
+    const spy: BotStrategy = {
+      id: "vol-spy",
+      displayName: "Volume Spy",
+      onStart(ctx) {
+        const h = volumeEma(ctx, "vfv", 100);
+        handles.ema = h;
+        h.update(10, 50);
+        h.update(20, 50);
+      },
+    };
+    const { s, clock } = newGame();
+    new BotOrchestrator(s, clock, { "vol-spy": spy });
+    configureAndStart(s, ["XY"], "vol-spy");
+
+    const v = handles.ema!.get();
+    expect(v).not.toBeNull();
+    expect(v!).toBeGreaterThan(10);
+    expect(v!).toBeLessThan(20);
+
+    // A large null observation should decay the weight without changing the value.
+    const weightBefore = handles.ema!.weight();
+    const valueBefore = handles.ema!.get()!;
+    handles.ema!.update(null, 200);
+    expect(handles.ema!.get()).toBeCloseTo(valueBefore, 9);
+    expect(handles.ema!.weight()).toBeLessThan(weightBefore);
+  });
+
+  it("action log survives serialize → hydrate", () => {
+    const noop: BotStrategy = { id: "noop", displayName: "noop" };
+    const { s, clock } = newGame();
+    new BotOrchestrator(s, clock, { noop });
+    configureAndStart(s, ["XY"], "noop");
+    const cid = s.getEngineState().contracts[0]!.id;
+    s.handleGameMessage(ALICE, { type: "PLACE_LIMIT", contractId: cid, side: "buy", qty: 1, price: 7 });
+
+    const blob = s.serialize();
+    expect(blob.actionLog?.length).toBeGreaterThan(0);
+
+    const restored = new MockerySession({
+      tableId: asTableId("t1"), hostUserId: HOST, options: blob.options, clock,
+    });
+    restored.hydrate(blob);
+    expect(restored.getEngineState().actionLog).toEqual(s.getEngineState().actionLog);
+    expect(restored.getEngineState().nextActionSeq).toBe(s.getEngineState().nextActionSeq);
   });
 });
 

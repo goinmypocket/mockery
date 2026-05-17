@@ -18,6 +18,7 @@ import {
 import { shuffle, type Rng } from "./rng";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const MAX_CODES = ALPHABET.length * ALPHABET.length;  // 676 two-letter codes
 
 export interface ParticipantInfo {
   readonly id: ParticipantId;
@@ -33,47 +34,51 @@ export interface GenerateOptions {
   readonly rng: Rng;            // mutated for `random` mode
 }
 
-/** Generate a fresh code book from scratch.
+/** Generate a fresh code book.
  *
- *  alpha mode: derive from displayName initials, bumping on collision.
- *  random mode: deterministic shuffle of 2-letter pairs from the seeded RNG.
+ *  alpha mode: derive codes from displayName initials.
+ *  random mode: deterministic shuffle of all 2-letter pairs.
  *
- *  Throws if there are too many participants for the alphabet (< 26 ✓).
+ *  Player collisions throw. Bots (which can outnumber distinct
+ *  initials) advance to the next free code instead.
  */
 export function generateCodeBook(
   participants: readonly ParticipantInfo[],
   opts: GenerateOptions,
 ): CodeBook {
-  if (participants.length > ALPHABET.length) {
+  if (participants.length > MAX_CODES) {
     throw new Error(
       `too many participants (${participants.length}) for 2-letter code book`,
     );
   }
 
   const out: CodeBook = {};
+  const used = new Set<string>();
+
   if (opts.mode === "random") {
-    const shuffled = shuffle(ALPHABET, opts.rng);
+    const pairs: string[] = [];
+    for (const a of ALPHABET) for (const b of ALPHABET) pairs.push(a + b);
+    const shuffled = shuffle(pairs, opts.rng);
     for (let i = 0; i < participants.length; i++) {
       const p = participants[i]!;
-      const seed1 = shuffled[i]!;
-      // pair the seed letter with another picked from the rest, also
-      // shuffled. To keep the pairing simple and unique, we pick the
-      // letter at offset (i + 1) mod 26 from the same shuffled array.
-      const seed2 = shuffled[(i + 1) % shuffled.length]!;
-      const raw = seed1 + seed2;
-      out[participantKey(p.id)] = applyCase(raw, p, opts.enforceCaseByRole);
+      const code = applyCase(shuffled[i]!, p, opts.enforceCaseByRole);
+      out[participantKey(p.id)] = code;
+      used.add(code.toLowerCase());
     }
-    // resolve collisions by bumping
-    fixCollisions(out, participants, opts.enforceCaseByRole);
     return out;
   }
 
-  // alpha mode: derive from display name initials.
   for (const p of participants) {
-    const raw = initialsFromName(p.displayName);
-    out[participantKey(p.id)] = applyCase(raw, p, opts.enforceCaseByRole);
+    let code = applyCase(initialsFromName(p.displayName), p, opts.enforceCaseByRole);
+    if (used.has(code.toLowerCase())) {
+      if (p.id.kind === "player") {
+        throw new Error(`duplicate code ${code} for ${p.displayName}`);
+      }
+      code = nextAvailable(used, p, opts.enforceCaseByRole);
+    }
+    out[participantKey(p.id)] = code;
+    used.add(code.toLowerCase());
   }
-  fixCollisions(out, participants, opts.enforceCaseByRole);
   return out;
 }
 
@@ -129,52 +134,16 @@ function applyCase(
   return p.informed ? raw.toUpperCase() : raw.toLowerCase();
 }
 
-/** In-place collision repair: walks participants in order, bumps the
- *  second letter A→B→C... and wraps around the alphabet. Falls back to
- *  bumping the first letter if the second exhausts. Throws if no unique
- *  code can be found (effectively impossible for ≤ 26 participants). */
-function fixCollisions(
-  book: CodeBook,
-  participants: readonly ParticipantInfo[],
+function nextAvailable(
+  used: Set<string>,
+  p: ParticipantInfo,
   enforceCaseByRole: boolean,
-): void {
-  for (let i = 0; i < participants.length; i++) {
-    const p = participants[i]!;
-    const myKey = participantKey(p.id);
-    let code = book[myKey]!;
-
-    let attempts = 0;
-    while (collides(code, myKey, book)) {
-      code = bump(code, attempts);
-      code = applyCase(code, p, enforceCaseByRole);
-      attempts++;
-      if (attempts > 26 * 26) {
-        throw new Error("could not resolve code collision");
-      }
+): string {
+  for (const a of ALPHABET) {
+    for (const b of ALPHABET) {
+      const code = applyCase(a + b, p, enforceCaseByRole);
+      if (!used.has(code.toLowerCase())) return code;
     }
-    book[myKey] = code;
   }
-}
-
-function collides(code: string, myKey: string, book: CodeBook): boolean {
-  for (const [key, other] of Object.entries(book)) {
-    if (key === myKey) continue;
-    if (codesCollide(code, other)) return true;
-  }
-  return false;
-}
-
-function bump(code: string, attempt: number): string {
-  // Increment the second letter by 1 each attempt; on overflow bump
-  // first letter and reset second.
-  const a = code.charCodeAt(0);
-  const b = code.charCodeAt(1);
-  const isUpper = a >= 65 && a <= 90;
-  const base = isUpper ? 65 : 97;
-  const offset = (b - base + 1) % 26;
-  if (offset === 0) {
-    const newA = base + ((a - base + 1) % 26);
-    return String.fromCharCode(newA, base + offset);
-  }
-  return String.fromCharCode(a, base + offset);
+  throw new Error("no available 2-letter code");
 }

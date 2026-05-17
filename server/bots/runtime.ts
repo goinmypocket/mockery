@@ -1,18 +1,22 @@
 // =============================================================================
 // Bot orchestrator. Owns the per-game lifecycle of bot instances:
-//   - on enter playing: instantiate one BotInstance per bot entity that
-//     has a strategy bound, call onStart.
-//   - on every state change (trade, event, market change): build a fresh
-//     MarketSnapshot for each bot, refresh its BotContext, call the
-//     appropriate callback.
+//   - on enter playing: resolve each entity's strategy + params, build
+//     a BotInstance, call onStart.
+//   - on every engine state change: build a fresh MarketSnapshot for
+//     each bot, refresh its BotContext, fire the appropriate
+//     callbacks (onMarketData, onBookUpdate per dirty contract,
+//     onPhaseChange when phase advances).
+//   - on every trade batch: project trades into BotTrade shape, fan
+//     out onTrade to all bots, and additionally fire onMyFill to the
+//     bot that was party to each fill.
 //   - on game over: call onGameOver, cancel pending bot timers, drop
 //     all instances.
 //
 // The orchestrator hooks into MockerySession via SessionHooks. Bot
 // actions go back into the session through `submitBotIntent` and
-// `cancelAllForBot`. Re-entrancy (a bot's action triggering another
-// state change which would recursively notify the same bot) is bounded
-// by a depth cap with deferred re-dispatch.
+// `cancelAllForBot`. Re-entrancy is bounded by a depth cap with
+// deferred re-dispatch; throws are counted per instance and a bot is
+// quarantined after 5 failures.
 // =============================================================================
 
 import type {
@@ -23,22 +27,26 @@ import type {
 import type {
   GameEvent,
   Order,
+  OrderBook,
   ParticipantId,
   Trade,
 } from "../../shared/types";
 import { participantKey } from "../../shared/types";
+import type { BotStateSnapshot } from "../../shared/types";
 import {
+  type AnyBotStrategy,
   type MarketSnapshot,
   type BookSnapshot,
   type BotContext,
-  type BotStrategy,
   type BotTrade,
   type GameResult,
   type LevelSnapshot,
   type OpResult,
+  type Params,
   type ParticipantSummary,
   type PlaceArgs,
   type TimerHandle,
+  resolveParams,
 } from "./api";
 import { getCash, getPosition, mtmPnl } from "../../engine/pnl";
 import { midPrice } from "../../engine/orderBook";
@@ -52,11 +60,19 @@ const MAX_REENTRY_DEPTH = 8;
 
 interface BotInstance {
   readonly entityId: string;
-  readonly strategy: BotStrategy;
+  readonly strategy: AnyBotStrategy;
+  readonly params: Params;
   readonly local: Map<string, unknown>;
   readonly timers: Set<TimerHandle>;
   errorCount: number;
   context: BotContext;
+  /** Last seen phase, for onPhaseChange dispatch. */
+  lastPhase: number;
+  /** Per-contract top-of-book fingerprint, for onBookUpdate dispatch.
+   *  Map key is the contract id; value is a string fingerprint
+   *  capturing top-of-book price/size + last-trade-price. A change
+   *  in either side fires onBookUpdate(contractId). */
+  bookFingerprints: Map<ContractId, string>;
 }
 
 export class BotOrchestrator {
@@ -68,7 +84,7 @@ export class BotOrchestrator {
   constructor(
     private readonly session: MockerySession,
     private readonly clock: SessionClock,
-    private readonly strategies: Readonly<Record<string, BotStrategy>>,
+    private readonly strategies: Readonly<Record<string, AnyBotStrategy>>,
   ) {
     const hooks: SessionHooks = {
       onEnterPlaying: () => this.onEnterPlaying(),
@@ -76,8 +92,28 @@ export class BotOrchestrator {
       onEvent: (event) => this.onEvent(event),
       onMarketChanged: () => this.onMarketChanged(),
       onGameOver: () => this.onGameOver(),
+      botStateProvider: () => this.captureBotStates(),
     };
     session.setHooks(hooks);
+  }
+
+  /** Snapshot every live bot's params and scratchpad. Called by the
+   *  session when it appends an entry to the action log so each entry
+   *  carries the bot state at that instant. The `local` Map is
+   *  projected to a plain object; values that can't survive a JSON
+   *  round-trip are replaced with a placeholder so the log stays
+   *  serializable. */
+  captureBotStates(): readonly BotStateSnapshot[] {
+    const out: BotStateSnapshot[] = [];
+    for (const inst of this.instances.values()) {
+      out.push({
+        entityId: inst.entityId,
+        strategyId: inst.strategy.id,
+        params: jsonSafeClone(inst.params),
+        local: jsonSafeFromMap(inst.local),
+      });
+    }
+    return out;
   }
 
   // -------------------------------------------------------------------
@@ -90,7 +126,16 @@ export class BotOrchestrator {
       if (!e.strategyId) continue;
       const strat = this.strategies[e.strategyId];
       if (!strat) continue;
-      this.instantiate(e.entityId, strat);
+      const resolved = resolveParams(strat.paramsSchema, e.params ?? null);
+      if (!resolved.ok) {
+        // Surface and skip — better than crashing the session at
+        // game-start because one bot's params are stale.
+        console.warn(
+          `[bot:${e.entityId}] params invalid (${resolved.reason}); skipping`,
+        );
+        continue;
+      }
+      this.instantiate(e.entityId, strat, resolved.params);
     }
     for (const inst of this.instances.values()) {
       this.callOnStart(inst);
@@ -109,8 +154,27 @@ export class BotOrchestrator {
     if (trades.length === 0) return;
     const projected = trades.map((t) => this.projectTrade(t));
     for (const inst of this.instances.values()) {
-      for (const t of projected) {
+      for (let i = 0; i < projected.length; i++) {
+        const t = projected[i]!;
+        const raw = trades[i]!;
         this.dispatchTo(inst, () => inst.strategy.onTrade?.(inst.context, t));
+        // onMyFill: cheap participant compare against the raw trade.
+        // The buyer/seller participant ids carry kind+entityId, so we
+        // don't need any code-table lookups here.
+        const buyerIsMe =
+          raw.buyer.kind === "bot" && raw.buyer.entityId === inst.entityId;
+        const sellerIsMe =
+          raw.seller.kind === "bot" && raw.seller.entityId === inst.entityId;
+        if (buyerIsMe) {
+          this.dispatchTo(inst, () =>
+            inst.strategy.onMyFill?.(inst.context, t, "buy"),
+          );
+        }
+        if (sellerIsMe) {
+          this.dispatchTo(inst, () =>
+            inst.strategy.onMyFill?.(inst.context, t, "sell"),
+          );
+        }
       }
     }
   }
@@ -144,11 +208,38 @@ export class BotOrchestrator {
     try {
       do {
         this.pendingMarketChange = false;
+        // Compute the current per-contract book fingerprints once,
+        // shared across all instances. Each instance compares against
+        // its own last-seen map so two bots can be at different
+        // points in the tick without losing onBookUpdate firings.
+        const currentBookFps = this.computeBookFingerprints();
         for (const inst of this.instances.values()) {
           this.refreshContext(inst);
+          // onMarketData — coarse, always fires on any change.
           this.dispatchTo(inst, () =>
             inst.strategy.onMarketData?.(inst.context, inst.context.snapshot),
           );
+          // onBookUpdate — fine, fires per contract whose fingerprint
+          // changed since this instance's last seen tick.
+          for (const [contractId, fp] of currentBookFps) {
+            if (inst.bookFingerprints.get(contractId) !== fp) {
+              inst.bookFingerprints.set(contractId, fp);
+              this.dispatchTo(inst, () =>
+                inst.strategy.onBookUpdate?.(inst.context, contractId),
+              );
+            }
+          }
+          // onPhaseChange — fires once whenever the phase counter
+          // advances. We track per-instance so a quarantined bot
+          // re-entering wouldn't accidentally skip a phase.
+          const phase = inst.context.snapshot.phase;
+          if (phase !== inst.lastPhase) {
+            const old = inst.lastPhase;
+            inst.lastPhase = phase;
+            this.dispatchTo(inst, () =>
+              inst.strategy.onPhaseChange?.(inst.context, old, phase),
+            );
+          }
         }
       } while (this.pendingMarketChange && this.depth < MAX_REENTRY_DEPTH);
     } finally {
@@ -188,24 +279,34 @@ export class BotOrchestrator {
   // Instance & context construction
   // -------------------------------------------------------------------
 
-  private instantiate(entityId: string, strategy: BotStrategy): void {
+  private instantiate(
+    entityId: string,
+    strategy: AnyBotStrategy,
+    params: Params,
+  ): void {
     const inst: BotInstance = {
       entityId,
       strategy,
+      params,
       local: new Map(),
       timers: new Set(),
       errorCount: 0,
       context: undefined as unknown as BotContext,   // set by refreshContext
+      lastPhase: this.session.getEngineState().phase,
+      bookFingerprints: this.computeBookFingerprints(),
     };
     this.instances.set(entityId, inst);
     this.refreshContext(inst);
   }
 
   private refreshContext(inst: BotInstance): void {
+    const snapshot = this.buildSnapshotFor(inst.entityId);
     const ctx: BotContext = {
       entityId: inst.entityId,
       tableId: this.session.tableId as TableId,
-      snapshot: this.buildSnapshotFor(inst.entityId),
+      snapshot,
+      myCode: snapshot.myCode,
+      params: inst.params,
 
       placeLimit: (args: PlaceArgs) => this.actionPlace(inst, args, /* ioc */ false),
       placeIoc:   (args: PlaceArgs) => this.actionPlace(inst, args, /* ioc */ true),
@@ -224,7 +325,10 @@ export class BotOrchestrator {
       setTimer: (ms, fn) => {
         const handle = this.clock.schedule(ms, () => {
           inst.timers.delete(handle);
-          this.dispatchTo(inst, fn);
+          // dispatchTo refreshes inst.context first, so we pass the
+          // fresh ctx into the callback rather than the (now stale)
+          // one closed over at schedule time.
+          this.dispatchTo(inst, () => fn(inst.context));
         });
         inst.timers.add(handle);
         return handle;
@@ -282,6 +386,9 @@ export class BotOrchestrator {
     const codeFor = (id: ParticipantId): string =>
       state.codeBook[participantKey(id)] ?? "??";
 
+    const myParticipant = this.botParticipant(entityId);
+    const myCode = codeFor(myParticipant);
+
     const participants: ParticipantSummary[] = [];
     for (let i = 0; i < state.seats.length; i++) {
       const u = state.seats[i];
@@ -318,12 +425,11 @@ export class BotOrchestrator {
 
     const recentTrades = state.trades.slice(-100).map((t) => this.projectTrade(t));
 
-    const myParticipant = this.botParticipant(entityId);
     const myKey = participantKey(myParticipant);
     const myPositionsFull = state.positions[myKey] ?? {};
     const myPositions: Record<ContractId, number> = { ...myPositionsFull };
     const myCash = state.cash[myKey] ?? 0;
-    const myMtmPnl = mtmPnl(state, myParticipant);
+    const myMtmPnlValue = mtmPnl(state, myParticipant);
     const myOpenOrders = this.collectMyOpenOrders(entityId);
 
     const msUntilNextEvent =
@@ -333,6 +439,7 @@ export class BotOrchestrator {
       ts: this.clock.now(),
       phase: state.phase,
       status: state.status === "finished" ? "finished" : "playing",
+      myCode,
       cardValues: state.options.cardValues,
       copiesPerValue: state.options.copiesPerValue,
       publicCards: state.publicCards.map((v, i) => (state.publicRevealed[i] ? v : null)),
@@ -345,9 +452,24 @@ export class BotOrchestrator {
       recentTrades,
       myPositions,
       myCash,
-      myMtmPnl,
+      myMtmPnl: myMtmPnlValue,
       myOpenOrders,
     };
+  }
+
+  /** Cheap per-contract fingerprint that captures the surface a
+   *  market-making strategy cares about: top-of-book price + size on
+   *  each side, plus the last trade price. Anything else (mid moves
+   *  without a top change, deeper-than-best activity) deliberately
+   *  doesn't fire onBookUpdate — those should arrive via onTrade or
+   *  onMarketData instead. */
+  private computeBookFingerprints(): Map<ContractId, string> {
+    const out = new Map<ContractId, string>();
+    const state = this.session.getEngineState();
+    for (const [cid, book] of Object.entries(state.books)) {
+      out.set(cid as ContractId, bookFingerprint(book));
+    }
+    return out;
   }
 
   private projectTrade(t: Trade): BotTrade {
@@ -364,6 +486,7 @@ export class BotOrchestrator {
       price: t.price,
       qty: t.qty,
       aggressor: t.aggressor,
+      restingOrderId: t.restingOrderId,
     };
   }
 
@@ -394,4 +517,43 @@ export class BotOrchestrator {
   private botParticipant(entityId: string): ParticipantId {
     return { kind: "bot", entityId };
   }
+}
+
+/** JSON round-trip a value for the action log. Anything that throws
+ *  (e.g. cycles, BigInt, functions, TimerHandle) is replaced with a
+ *  string placeholder. */
+function jsonSafeValue(v: unknown): unknown {
+  try {
+    return JSON.parse(JSON.stringify(v));
+  } catch {
+    return `[non-serializable:${typeof v}]`;
+  }
+}
+
+function jsonSafeClone(obj: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) out[k] = jsonSafeValue(v);
+  return out;
+}
+
+function jsonSafeFromMap(map: Map<string, unknown>): Readonly<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of map) out[k] = jsonSafeValue(v);
+  return out;
+}
+
+function bookFingerprint(book: OrderBook): string {
+  const bb = book.bids[0];
+  const bo = book.offers[0];
+  const bbSize = bb ? bb.orders.reduce((s, o) => s + o.qty, 0) : 0;
+  const boSize = bo ? bo.orders.reduce((s, o) => s + o.qty, 0) : 0;
+  return [
+    book.bids.length,
+    bb?.price ?? "-",
+    bbSize,
+    book.offers.length,
+    bo?.price ?? "-",
+    boSize,
+    book.lastTradePrice ?? "-",
+  ].join("|");
 }

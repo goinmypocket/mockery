@@ -30,12 +30,13 @@ describe("orderBook", () => {
 
   it("fills against existing offer at standing price", () => {
     const b = emptyBook(C);
-    placeOrder(b, mkPlace(bob(), "sell", 10, 12));
+    const bobR = placeOrder(b, mkPlace(bob(), "sell", 10, 12));
     const r = placeOrder(b, mkPlace(alice(), "buy", 4, 15));    // crosses
     expect(r.trades).toHaveLength(1);
     expect(r.trades[0]!.price).toBe(12);                          // standing wins
     expect(r.trades[0]!.qty).toBe(4);
     expect(r.trades[0]!.aggressor).toBe("buyer");
+    expect(r.trades[0]!.restingOrderId).toBe(bobR.residentOrderId);
     expect(b.lastTradePrice).toBe(12);
     // residual offer at 12 should be 6
     expect(bestOffer(b)?.orders[0]!.qty).toBe(6);

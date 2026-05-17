@@ -7,8 +7,13 @@ ordinary participants — no separate auth, no separate wire
 protocol, and the same redaction rules as uninformed humans.
 
 This guide is the contract you write your bots against. It pairs
-with `game-spec.md` (the engine authority) and `game-ui-spec.md`
-(the player-facing UI).
+with `game-spec.md` (the engine authority), `game-ui-spec.md` (the
+player-facing UI), and `bot-spawning-model.md` (one layer above:
+how a single bot player runs many concurrent, stochastically-spawned
+parametrised instances of strategies — read that doc for the
+**Strategy / Profile / Instance / Bot** vocabulary and the
+parameter-distribution surface). Per-strategy specs live in
+`docs/bots/<strategy>.md`.
 
 > **Status:** v0.1 of the bot API. The interface is stable in
 > intent; concrete TypeScript names are subject to small renames

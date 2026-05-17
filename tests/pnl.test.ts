@@ -47,6 +47,7 @@ describe("pnl bookkeeping", () => {
       price: 10,
       qty: 5,
       aggressor: "buyer",
+      restingOrderId: asOrderId("dummy"),
     };
     applyTrade(s, trade);
     expect(getPosition(s, alice, cid)).toBe(5);
@@ -65,6 +66,7 @@ describe("pnl bookkeeping", () => {
     applyTrade(s, {
       id: asTradeId("t1"), ts: 1, phase: 0, contractId: cid,
       buyer: alice, seller: bob, price: 10, qty: 5, aggressor: "buyer",
+      restingOrderId: asOrderId("dummy"),
     });
     s.books[cid]!.lastTradePrice = 10;
     expect(markPrice(s, cid)).toBe(10);
@@ -95,6 +97,7 @@ describe("pnl bookkeeping", () => {
     applyTrade(s, {
       id: asTradeId("t1"), ts: 1, phase: 0, contractId: cid,
       buyer: alice, seller: bob, price: 10, qty: 5, aggressor: "buyer",
+      restingOrderId: asOrderId("dummy"),
     });
     const settled = settledPnl(s, alice, { [cid]: 25 });
     expect(settled).toBe(75);   // 5 × 25 + (-50)

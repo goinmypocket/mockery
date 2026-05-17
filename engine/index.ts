@@ -12,3 +12,5 @@ export * from "./settlement";
 export * from "./codes";
 export * from "./deal";
 export * from "./project";
+export * from "./distribution";
+export * from "./sampling";

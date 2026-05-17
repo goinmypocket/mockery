@@ -7,6 +7,7 @@
 // =============================================================================
 
 import type {
+  ActionLogEntry,
   BotEntity,
   CodeBook,
   ContractDef,
@@ -120,6 +121,13 @@ export interface GameState {
   /** Settlement results, populated once status === "finished". */
   settlements: Record<ContractId, number> | null;
   finalPnl: Record<string, number> | null;
+
+  /** Append-only log of every play-phase action (player intent, bot
+   *  intent, system event). Each entry carries a snapshot of every
+   *  live bot's params + scratchpad so a replay can see "what was the
+   *  bot thinking when this happened?". */
+  actionLog: ActionLogEntry[];
+  nextActionSeq: number;
 }
 
 export function createInitialState(args: {
@@ -157,5 +165,7 @@ export function createInitialState(args: {
     nextTradeSeq: 1,
     settlements: null,
     finalPnl: null,
+    actionLog: [],
+    nextActionSeq: 1,
   };
 }

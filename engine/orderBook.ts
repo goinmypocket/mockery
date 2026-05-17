@@ -106,6 +106,7 @@ export function placeOrder(book: OrderBook, args: PlaceArgs): PlaceResult {
         price: bestLevel.price,
         qty: tradeQty,
         aggressor: args.side === "buy" ? "buyer" : "seller",
+        restingOrderId: resting.id,
       });
 
       remaining -= tradeQty;

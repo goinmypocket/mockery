@@ -43,7 +43,10 @@ import {
 import {
   isValidCode,
   participantKey,
+  type ActionActor,
+  type ActionLogEntry,
   type BotEntity,
+  type BotStateSnapshot,
   type CodeMode,
   type ContractDef,
   type EventMode,
@@ -99,6 +102,12 @@ export interface SessionHooks {
   onEvent?(event: GameEvent): void;
   onMarketChanged?(): void;
   onGameOver?(): void;
+  /** Optional bot-state provider, invoked synchronously by the session
+   *  when it writes an action-log entry so each entry can carry a
+   *  snapshot of every live bot's params + scratchpad. The
+   *  orchestrator installs this; tests or alternative hosts can omit
+   *  it (entries will have an empty `botStates` array). */
+  botStateProvider?(): readonly BotStateSnapshot[];
 }
 
 const SHARED_CONTRACTS_PATH = new URL("../config/shared-contracts.json", import.meta.url);
@@ -146,7 +155,11 @@ export interface MockerySave {
     readonly payoffHash: string;
   }>;
   readonly eventQueue?: readonly EventQueueEntry[];
-  readonly botEntities?: ReadonlyArray<{ readonly entityId: string; readonly strategyId: string | null }>;
+  readonly botEntities?: ReadonlyArray<{
+    readonly entityId: string;
+    readonly strategyId: string | null;
+    readonly params?: Readonly<Record<string, unknown>> | null;
+  }>;
   readonly displayNames?: Readonly<Record<string, string>>;
   readonly codeBook?: Readonly<Record<string, string>>;
   readonly books?: Readonly<Record<string, SavedBook>>;
@@ -157,6 +170,8 @@ export interface MockerySave {
   readonly nextTradeSeq?: number;
   readonly settlements?: Readonly<Record<string, number>> | null;
   readonly finalPnl?: Readonly<Record<string, number>> | null;
+  readonly actionLog?: readonly ActionLogEntry[];
+  readonly nextActionSeq?: number;
 }
 
 interface SavedBook {
@@ -484,6 +499,19 @@ export class MockerySession implements GameSession<MockerySave> {
       this.state.trades.push(trade);
       applyTrade(this.state, trade);
     }
+    this.logAction(
+      { kind: "player", userId },
+      ioc ? "PLACE_IOC" : "PLACE_LIMIT",
+      { contractId, side, qty, price },
+      {
+        ok: true,
+        value: {
+          orderId: result.residentOrderId,
+          fillCount: result.trades.length,
+          fillQty: result.trades.reduce((s, t) => s + t.qty, 0),
+        },
+      },
+    );
     this.afterTrades(result.trades);
     this.broadcastSnapshot();
   }
@@ -495,6 +523,12 @@ export class MockerySession implements GameSession<MockerySave> {
       const order = book.ordersById[orderId];
       if (order && order.participant.kind === "player" && order.participant.userId === userId) {
         cancelOrder(book, orderId);
+        this.logAction(
+          { kind: "player", userId },
+          "CANCEL_ORDER",
+          { orderId, contractId: order.contractId },
+          { ok: true },
+        );
         this.broadcastSnapshot();
         return;
       }
@@ -528,6 +562,7 @@ export class MockerySession implements GameSession<MockerySave> {
     if (!v.ok) return this.reject(userId, msg, v.reason ?? "invalid payoff");
     const id = asContractId(`c${this.state.contracts.length + 1}`);
     this.state.contracts.push({ id, name, description, payoffSource, payoffHash: "" });
+    this.logHostSuccess(userId, "SETUP_ADD_CONTRACT", { id, name });
     this.broadcastSnapshot();
   }
 
@@ -537,6 +572,7 @@ export class MockerySession implements GameSession<MockerySave> {
     const idx = this.state.contracts.findIndex((c) => c.id === cid);
     if (idx < 0) return this.reject(userId, msg, "no such contract");
     this.state.contracts.splice(idx, 1);
+    this.logHostSuccess(userId, "SETUP_REMOVE_CONTRACT", { contractId: cid });
     this.broadcastSnapshot();
   }
 
@@ -551,6 +587,7 @@ export class MockerySession implements GameSession<MockerySave> {
     const v = validatePayoffSource(payoffSource);
     if (!v.ok) return this.reject(userId, msg, v.reason ?? "invalid payoff");
     this.state.contracts[idx] = { id: cid, name, description, payoffSource, payoffHash: "" };
+    this.logHostSuccess(userId, "SETUP_REPLACE_CONTRACT", { contractId: cid, name });
     this.broadcastSnapshot();
   }
 
@@ -568,6 +605,7 @@ export class MockerySession implements GameSession<MockerySave> {
       id, name: entry.name, description: entry.description,
       payoffSource: entry.payoffSource, payoffHash: "",
     });
+    this.logHostSuccess(userId, "SETUP_IMPORT_CONTRACT", { id, refId });
     this.broadcastSnapshot();
   }
 
@@ -608,6 +646,7 @@ export class MockerySession implements GameSession<MockerySave> {
       if (!this.state.codeBook[key]) this.state.codeBook[key] = e.entityId;
       this.state.displayNames[key] = e.entityId;
     }
+    this.logHostSuccess(userId, "SETUP_SET_BOT_ENTITIES", { entityIds });
     this.broadcastSnapshot();
   }
 
@@ -618,7 +657,17 @@ export class MockerySession implements GameSession<MockerySave> {
     const strategyId = raw === null || raw === undefined ? null : String(raw);
     const idx = this.state.botEntities.findIndex((e) => e.entityId === entityId);
     if (idx < 0) return this.reject(userId, msg, "no such entity");
-    this.state.botEntities[idx] = { entityId, strategyId };
+    // Optional per-instance params bag. We don't validate against
+    // the strategy's schema here — that happens at instantiation in
+    // the orchestrator, which has the strategy table in hand. The
+    // session just stores it verbatim so the save round-trips.
+    const rawParams = msg["params"];
+    const params: Readonly<Record<string, unknown>> | null =
+      rawParams && typeof rawParams === "object" && !Array.isArray(rawParams)
+        ? { ...(rawParams as Record<string, unknown>) }
+        : null;
+    this.state.botEntities[idx] = { entityId, strategyId, params };
+    this.logHostSuccess(userId, "SETUP_BIND_BOT_STRATEGY", { entityId, strategyId, params });
     this.broadcastSnapshot();
   }
 
@@ -627,6 +676,7 @@ export class MockerySession implements GameSession<MockerySave> {
     const mode = String(msg["mode"] ?? "") as EventMode;
     if (mode !== "auto" && mode !== "manual") return this.reject(userId, msg, "invalid mode");
     this.state.options = { ...this.state.options, eventMode: mode };
+    this.logHostSuccess(userId, "SETUP_SET_EVENT_MODE", { mode });
     this.broadcastSnapshot();
   }
 
@@ -701,6 +751,7 @@ export class MockerySession implements GameSession<MockerySave> {
     if (codeRulesChanged) {
       this.state.codeBook = this.generateInitialCodeBook();
     }
+    this.logHostSuccess(userId, "SETUP_SET_GAME_OPTIONS", { ...msg });
     this.broadcastSnapshot();
   }
 
@@ -715,12 +766,14 @@ export class MockerySession implements GameSession<MockerySave> {
     );
     if (!validation.ok) return this.reject(userId, msg, validation.reason);
     this.state.codeBook[targetKey] = code;
+    this.logHostSuccess(userId, "SETUP_SET_CODE", { participantKey: targetKey, code });
     this.broadcastSnapshot();
   }
 
   private onSetupReshuffleCodes(userId: UserId): void {
     if (!this.requireSetup(userId, "SETUP_RESHUFFLE_CODES")) return;
     this.state.codeBook = this.generateInitialCodeBook();
+    this.logHostSuccess(userId, "SETUP_RESHUFFLE_CODES");
     this.broadcastSnapshot();
   }
 
@@ -747,6 +800,7 @@ export class MockerySession implements GameSession<MockerySave> {
     [seats[i], seats[j]] = [seats[j]!, seats[i]!];
     [this.seatDisplayNames[i], this.seatDisplayNames[j]] =
       [this.seatDisplayNames[j]!, this.seatDisplayNames[i]!];
+    this.logHostSuccess(userId, "SETUP_SWAP_SEATS", { i, j });
     this.broadcastSnapshot();
   }
 
@@ -760,6 +814,7 @@ export class MockerySession implements GameSession<MockerySave> {
       ? (msg["list"] as unknown[]).filter((x): x is string => typeof x === "string").map((s) => s as UserId)
       : this.state.options.identityRevealList;
     this.state.options = { ...this.state.options, identityReveal: mode, identityRevealList: list };
+    this.logHostSuccess(userId, "SETUP_SET_IDENTITY_REVEAL", { mode, list });
     this.broadcastSnapshot();
   }
 
@@ -772,6 +827,7 @@ export class MockerySession implements GameSession<MockerySave> {
     const event = parseEventEntry(msg["event"]);
     if (!event) return this.reject(userId, msg, "invalid event");
     this.state.eventQueue.push(event);
+    this.logHostSuccess(userId, setup ? "SETUP_QUEUE_APPEND" : "QUEUE_APPEND", { event });
     this.onQueueChanged();
   }
 
@@ -784,6 +840,7 @@ export class MockerySession implements GameSession<MockerySave> {
     }
     if (!event) return this.reject(userId, msg, "invalid event");
     this.state.eventQueue.splice(idx, 0, event);
+    this.logHostSuccess(userId, setup ? "SETUP_QUEUE_INSERT" : "QUEUE_INSERT", { idx, event });
     this.onQueueChanged();
   }
 
@@ -794,6 +851,7 @@ export class MockerySession implements GameSession<MockerySave> {
       return this.reject(userId, msg, "invalid idx");
     }
     this.state.eventQueue.splice(idx, 1);
+    this.logHostSuccess(userId, setup ? "SETUP_QUEUE_REMOVE" : "QUEUE_REMOVE", { idx });
     this.onQueueChanged();
   }
 
@@ -807,6 +865,7 @@ export class MockerySession implements GameSession<MockerySave> {
     }
     const [item] = this.state.eventQueue.splice(from, 1);
     this.state.eventQueue.splice(to, 0, item!);
+    this.logHostSuccess(userId, setup ? "SETUP_QUEUE_MOVE" : "QUEUE_MOVE", { from, to });
     this.onQueueChanged();
   }
 
@@ -868,6 +927,7 @@ export class MockerySession implements GameSession<MockerySave> {
     this.state.startedAt = this.clock.now();
     this.state.status = "playing";
 
+    this.logHostSuccess(userId, "START_TRADING");
     this.hooks.onEnterPlaying?.();
     if (this.state.options.eventMode === "auto") {
       this.armNextEventTimer();
@@ -879,6 +939,41 @@ export class MockerySession implements GameSession<MockerySave> {
   private afterTrades(trades: readonly Trade[]): void {
     if (trades.length > 0) this.hooks.onTrades?.(trades);
     this.hooks.onMarketChanged?.();
+  }
+
+  /** Append a row to the play-phase action log, tagging it with the
+   *  current phase / timestamp and a snapshot of every live bot's
+   *  params + scratchpad (taken via the orchestrator-installed
+   *  provider). Called from every play-phase action handler — both
+   *  player intents and bot intents — and from the system-event /
+   *  end-game paths. */
+  /** Sugar for the most common case: a host (player) action that just
+   *  succeeded with no extra return value. */
+  private logHostSuccess(
+    userId: UserId,
+    type: string,
+    payload: Readonly<Record<string, unknown>> = {},
+  ): void {
+    this.logAction({ kind: "player", userId }, type, payload, { ok: true });
+  }
+
+  private logAction(
+    actor: ActionActor,
+    type: string,
+    payload: Readonly<Record<string, unknown>>,
+    outcome: ActionLogEntry["outcome"],
+  ): void {
+    const botStates = this.hooks.botStateProvider?.() ?? [];
+    this.state.actionLog.push({
+      seq: this.state.nextActionSeq++,
+      ts: this.clock.now(),
+      phase: this.state.phase,
+      actor,
+      type,
+      payload,
+      outcome,
+      botStates,
+    });
   }
 
   // -------------------------------------------------------------------
@@ -1018,6 +1113,12 @@ export class MockerySession implements GameSession<MockerySave> {
         event = { type: "ROTATED" };
       }
     }
+    this.logAction(
+      { kind: "system" },
+      head.type,
+      head.type === "REVEAL_PUBLIC" ? { slotIndex: head.slotIndex ?? null } : {},
+      { ok: true, value: event as unknown as Record<string, unknown> },
+    );
     this.hooks.onEvent?.(event);
     this.hooks.onMarketChanged?.();
     this.broadcastSnapshot();
@@ -1068,6 +1169,7 @@ export class MockerySession implements GameSession<MockerySave> {
       this.state.endGameAt = null;
       this.eventTimer = this.clock.schedule(newMs, () => this.onAutoEventTimer());
     }
+    this.logHostSuccess(userId, "DELAY_NEXT_EVENT", { seconds, newTarget });
     this.broadcastSnapshot();
   }
 
@@ -1080,12 +1182,14 @@ export class MockerySession implements GameSession<MockerySave> {
       this.clock.cancel(this.eventTimer);
       this.eventTimer = null;
       this.state.nextEventAt = null;
+      this.logHostSuccess(userId, "PREPONE_NEXT_EVENT");
       this.popAndApplyHeadOfQueue();
       if (this.state.status === "playing") this.armNextEventTimer();
     } else if (this.endTimer !== null) {
       this.clock.cancel(this.endTimer);
       this.endTimer = null;
       this.state.endGameAt = null;
+      this.logHostSuccess(userId, "PREPONE_NEXT_EVENT");
       this.settleAndFinish();
     }
   }
@@ -1098,6 +1202,7 @@ export class MockerySession implements GameSession<MockerySave> {
     if (this.state.eventQueue.length === 0) {
       return this.reject(userId, "FIRE_NEXT_EVENT", "queue empty");
     }
+    this.logHostSuccess(userId, "FIRE_NEXT_EVENT");
     this.popAndApplyHeadOfQueue();
   }
 
@@ -1114,6 +1219,7 @@ export class MockerySession implements GameSession<MockerySave> {
       this.graceTimer = null;
       this.state.graceTimerEndsAt = null;
     }
+    this.logHostSuccess(userId, "END_GAME");
     this.settleAndFinish();
   }
 
@@ -1134,6 +1240,7 @@ export class MockerySession implements GameSession<MockerySave> {
       this.state.graceTimerEndsAt = null;
       if (this.state.status === "playing") this.settleAndFinish();
     });
+    this.logHostSuccess(userId, "START_GRACE_TIMER", { seconds });
     this.broadcastSnapshot();
   }
 
@@ -1143,6 +1250,7 @@ export class MockerySession implements GameSession<MockerySave> {
       this.clock.cancel(this.graceTimer);
       this.graceTimer = null;
       this.state.graceTimerEndsAt = null;
+      this.logHostSuccess(userId, "CANCEL_GRACE_TIMER");
       this.broadcastSnapshot();
     }
   }
@@ -1169,6 +1277,13 @@ export class MockerySession implements GameSession<MockerySave> {
     this.state.finalPnl = finalPnl;
     this.state.status = "finished";
 
+    this.logAction(
+      { kind: "system" },
+      "END_GAME",
+      {},
+      { ok: true, value: { settlements: { ...settlements }, finalPnl: { ...finalPnl } } },
+    );
+
     // Cancel anything still scheduled.
     if (this.eventTimer) { this.clock.cancel(this.eventTimer); this.eventTimer = null; }
     if (this.endTimer)   { this.clock.cancel(this.endTimer);   this.endTimer = null; }
@@ -1192,20 +1307,27 @@ export class MockerySession implements GameSession<MockerySave> {
    *  shape that depends on the intent kind. The orchestrator translates
    *  these into the `BotContext` action API return shapes. */
   submitBotIntent(entityId: string, intent: Record<string, unknown>): BotIntentResult {
-    if (this.state.status !== "playing") return { ok: false, reason: "market not open" };
+    const actor: ActionActor = { kind: "bot", entityId };
+    const fail = (type: string, payload: Record<string, unknown>, reason: string): BotIntentResult => {
+      this.logAction(actor, type, payload, { ok: false, reason });
+      return { ok: false, reason };
+    };
+
+    if (this.state.status !== "playing") return fail("UNKNOWN", { intent }, "market not open");
     const entity = this.state.botEntities.find((e) => e.entityId === entityId);
-    if (!entity) return { ok: false, reason: "unknown bot entity" };
+    if (!entity) return fail("UNKNOWN", { intent }, "unknown bot entity");
     const kind = String(intent["type"] ?? "");
     if (kind === "PLACE_LIMIT" || kind === "PLACE_IOC") {
       const contractId = asContractId(String(intent["contractId"] ?? ""));
       const side = String(intent["side"] ?? "") as OrderSide;
       const qty = Number(intent["qty"]);
       const price = Number(intent["price"]);
-      if (side !== "buy" && side !== "sell") return { ok: false, reason: "side must be buy or sell" };
+      const payload = { contractId, side, qty, price };
+      if (side !== "buy" && side !== "sell") return fail(kind, payload, "side must be buy or sell");
       const book = this.state.books[contractId];
-      if (!book) return { ok: false, reason: "unknown contract" };
-      if (!Number.isInteger(qty) || qty <= 0) return { ok: false, reason: "invalid qty" };
-      if (!Number.isInteger(price)) return { ok: false, reason: "invalid price" };
+      if (!book) return fail(kind, payload, "unknown contract");
+      if (!Number.isInteger(qty) || qty <= 0) return fail(kind, payload, "invalid qty");
+      if (!Number.isInteger(price)) return fail(kind, payload, "invalid price");
       const r = placeOrder(book, {
         participant: { kind: "bot", entityId }, contractId, side, qty, price,
         ioc: kind === "PLACE_IOC", ts: this.clock.now(), phase: this.state.phase,
@@ -1216,6 +1338,14 @@ export class MockerySession implements GameSession<MockerySave> {
         this.state.trades.push(t);
         applyTrade(this.state, t);
       }
+      this.logAction(actor, kind, payload, {
+        ok: true,
+        value: {
+          orderId: r.residentOrderId,
+          fillCount: r.trades.length,
+          fillQty: r.trades.reduce((s, t) => s + t.qty, 0),
+        },
+      });
       this.afterTrades(r.trades);
       this.broadcastSnapshot();
       return {
@@ -1229,13 +1359,19 @@ export class MockerySession implements GameSession<MockerySave> {
         const order = book.ordersById[orderId];
         if (order && order.participant.kind === "bot" && order.participant.entityId === entityId) {
           cancelOrder(book, orderId);
+          this.logAction(
+            actor,
+            "CANCEL_ORDER",
+            { orderId, contractId: order.contractId },
+            { ok: true },
+          );
           this.broadcastSnapshot();
           return { ok: true, value: { cancelled: 1 } };
         }
       }
-      return { ok: false, reason: "order not found or not yours" };
+      return fail("CANCEL_ORDER", { orderId }, "order not found or not yours");
     }
-    return { ok: false, reason: `bots cannot submit ${kind}` };
+    return fail(kind || "UNKNOWN", { intent }, `bots cannot submit ${kind}`);
   }
 
   /** Register observer hooks. Used by the bot orchestrator. */
@@ -1254,6 +1390,12 @@ export class MockerySession implements GameSession<MockerySave> {
         if (cancelOrder(book, id)) cancelled++;
       }
     }
+    this.logAction(
+      { kind: "bot", entityId },
+      "CANCEL_ALL",
+      {},
+      { ok: true, value: { cancelled } },
+    );
     if (cancelled > 0) this.broadcastSnapshot();
     return { ok: true, value: { cancelled } };
   }
@@ -1322,6 +1464,8 @@ export class MockerySession implements GameSession<MockerySave> {
       nextTradeSeq: this.state.nextTradeSeq,
       settlements: this.state.settlements ? { ...this.state.settlements } as Record<string, number> : null,
       finalPnl: this.state.finalPnl ? { ...this.state.finalPnl } : null,
+      actionLog: this.state.actionLog.slice(),
+      nextActionSeq: this.state.nextActionSeq,
     };
   }
 
@@ -1377,13 +1521,22 @@ export class MockerySession implements GameSession<MockerySave> {
       this.state.positions[k] = { ...m } as Record<ContractId, number>;
     }
     this.state.cash = { ...(blob.cash ?? {}) };
-    this.state.trades = (blob.trades ?? []).map((t) => ({ ...t })) as Trade[];
+    // Legacy saves predate `restingOrderId`; sentinel it so attribution
+    // helpers fail to match against any live order set (matches the
+    // "old trade can't be claimed by any current sub-instance" intuition).
+    this.state.trades = (blob.trades ?? []).map((t) => {
+      const raw = t as Trade & { restingOrderId?: OrderId };
+      return { ...raw, restingOrderId: raw.restingOrderId ?? asOrderId("__legacy") };
+    });
     this.state.nextOrderSeq = blob.nextOrderSeq ?? 1;
     this.state.nextTradeSeq = blob.nextTradeSeq ?? 1;
     this.state.settlements = blob.settlements
       ? ({ ...blob.settlements } as Record<ContractId, number>)
       : null;
     this.state.finalPnl = blob.finalPnl ? { ...blob.finalPnl } : null;
+    this.state.actionLog = blob.actionLog ? blob.actionLog.slice() : [];
+    this.state.nextActionSeq =
+      blob.nextActionSeq ?? this.state.actionLog.length + 1;
 
     // Rebuild order books: levels carry order copies; ordersById is
     // relinked to the SAME order references so cancel/match operations
@@ -1502,6 +1655,19 @@ export class MockerySession implements GameSession<MockerySave> {
   private reject(userId: UserId, intent: unknown, reason: string): void {
     const send = this.connections.get(userId);
     if (send) send({ type: "INTENT_REJECTED", intent, reason });
+    // Mirror the rejection into the action log so replays can see
+    // intent attempts that didn't actually mutate state.
+    const type = intentType(intent);
+    const payload =
+      intent && typeof intent === "object" && !Array.isArray(intent)
+        ? { ...(intent as Record<string, unknown>) }
+        : { intent };
+    this.logAction(
+      { kind: "player", userId },
+      type,
+      payload,
+      { ok: false, reason },
+    );
   }
 
   private sendSnapshotTo(userId: UserId): void {
@@ -1556,6 +1722,14 @@ export class MockerySession implements GameSession<MockerySave> {
 
 function asObject(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+/** Best-effort extraction of an intent's `type` for the action log. */
+function intentType(intent: unknown): string {
+  if (typeof intent === "string") return intent;
+  const o = asObject(intent);
+  const t = o ? o["type"] : undefined;
+  return typeof t === "string" ? t : "UNKNOWN";
 }
 
 function parseEventEntry(raw: unknown): EventQueueEntry | null {

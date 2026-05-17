@@ -36,8 +36,19 @@ describe("codes.generateCodeBook (alpha)", () => {
     expect(book[participantKey(ps[1]!.id)]).toBe("bo");
   });
 
-  it("resolves collisions by bumping the second letter", () => {
+  it("throws on player code collision", () => {
     const ps = [p("Alex", true), p("Alice", true)];   // both want AL
+    expect(() =>
+      generateCodeBook(ps, {
+        mode: "alpha",
+        enforceCaseByRole: false,
+        rng: makeRng(1),
+      }),
+    ).toThrow(/duplicate code/);
+  });
+
+  it("bumps bot codes when they collide", () => {
+    const ps = [p("Alex", true), p("Alice", false, true)];   // bot also wants AL
     const book = generateCodeBook(ps, {
       mode: "alpha",
       enforceCaseByRole: false,
