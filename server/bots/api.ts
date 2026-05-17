@@ -44,6 +44,22 @@ export type { OpResult, TimerHandle };
  *  because the generic is invariant in the BotContext position. */
 export type AnyBotStrategy = BotStrategy<Params>;
 
+/** Group several engine-level bot entities under a single strategy
+ *  instance. Orders the strategy places are routed across the
+ *  group's `entityIds` uniformly (seeded RNG). `myPosition`,
+ *  `myCash`, `myOpenOrders` aggregate across the group; `onMyFill`
+ *  fires for fills against any of the group's entities. See
+ *  `docs/bot-spawning-model.md` §6. */
+export interface BotGroupConfig {
+  readonly groupId: string;
+  readonly entityIds: readonly string[];
+  readonly strategy: AnyBotStrategy;
+  readonly params?: Params | null;
+  /** Seed for the entity-picker RNG. If absent, derived
+   *  deterministically from `groupId`. */
+  readonly seed?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Strategy interface
 // ---------------------------------------------------------------------------
@@ -179,10 +195,14 @@ export interface BotContext<P = Params> {
   readonly entityId: string;
   readonly tableId: TableId;
   readonly snapshot: MarketSnapshot;
-  /** This bot's own participant code, the same code that appears in
-   *  `MarketSnapshot.books[*].parties[*].code` and in trade prints.
-   *  Saves authors a roundtrip through `snapshot.participants`. */
+  /** Primary code for this bot. For normal bots equals the only code;
+   *  for grouped bots (multi-code routing), equals the first of
+   *  `myCodes`. Strategies that care about "is any code mine?" should
+   *  check `myCodes.includes(...)` rather than `=== myCode`. */
   readonly myCode: ParticipantCode;
+  /** All codes this bot routes orders through. Length ≥ 1; > 1 only
+   *  when the host wired this bot as a `BotGroup`. */
+  readonly myCodes: readonly ParticipantCode[];
   /** Validated parameter bag, resolved against the strategy's
    *  `paramsSchema` and the host's `BotEntity.params`. Always present
    *  (the empty object `{}` for strategies without a schema). */

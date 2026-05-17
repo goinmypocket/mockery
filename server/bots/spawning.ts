@@ -117,6 +117,7 @@ export function multiProfileBot(config: SpawnerConfig): BotStrategy {
       tableId: ctx.tableId,
       get snapshot() { return parentCtx!.snapshot; },
       myCode: ctx.myCode,
+      myCodes: ctx.myCodes,
       params: profile.params,
       local,
       shared,

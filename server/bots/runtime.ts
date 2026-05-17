@@ -34,6 +34,7 @@ import type {
 import { participantKey } from "../../shared/types";
 import type { BotStateSnapshot } from "../../shared/types";
 import { makeRng } from "../../engine/rng";
+import { unsafeUniformIntDistribution } from "pure-rand";
 import { drawProfilesFromWire, type WireBotConfigSpec } from "./config";
 import { multiProfileBot } from "./spawning";
 import {
@@ -62,20 +63,23 @@ import type { SessionClock } from "../clock";
 const MAX_REENTRY_DEPTH = 8;
 
 interface BotInstance {
+  /** Primary key — entityId for standalone, groupId for groups. */
   readonly entityId: string;
+  /** Engine-level entities this instance acts on / receives fills for.
+   *  Length 1 for standalone; length N for groups (multi-code). */
+  readonly entityIds: readonly string[];
   readonly strategy: AnyBotStrategy;
   readonly params: Params;
   readonly local: Map<string, unknown>;
   readonly timers: Set<TimerHandle>;
   errorCount: number;
   context: BotContext;
-  /** Last seen phase, for onPhaseChange dispatch. */
   lastPhase: number;
-  /** Per-contract top-of-book fingerprint, for onBookUpdate dispatch.
-   *  Map key is the contract id; value is a string fingerprint
-   *  capturing top-of-book price/size + last-trade-price. A change
-   *  in either side fires onBookUpdate(contractId). */
   bookFingerprints: Map<ContractId, string>;
+  /** Seeded RNG used to pick a routing entity per `actionPlace` when
+   *  `entityIds.length > 1`. Same seed → same routing sequence
+   *  → replayable. Undefined for standalone instances. */
+  routingRng?: import("../../engine/rng").Rng;
 }
 
 export class BotOrchestrator {
@@ -84,11 +88,15 @@ export class BotOrchestrator {
   private pendingMarketChange = false;
   private depth = 0;
 
+  private readonly groups: readonly import("./api").BotGroupConfig[];
+
   constructor(
     private readonly session: MockerySession,
     private readonly clock: SessionClock,
     private readonly strategies: Readonly<Record<string, AnyBotStrategy>>,
+    opts?: { readonly groups?: readonly import("./api").BotGroupConfig[] },
   ) {
+    this.groups = opts?.groups ?? [];
     const hooks: SessionHooks = {
       onEnterPlaying: () => this.onEnterPlaying(),
       onTrades: (trades) => this.onTrades(trades),
@@ -125,7 +133,21 @@ export class BotOrchestrator {
 
   private onEnterPlaying(): void {
     const state = this.session.getEngineState();
+
+    // Instantiate groups first; remember the entities they own so
+    // standalone iteration skips them.
+    const claimed = new Set<string>();
+    for (const g of this.groups) {
+      try {
+        this.instantiateGroup(g);
+        for (const eid of g.entityIds) claimed.add(eid);
+      } catch (err) {
+        console.warn(`[bot-group:${g.groupId}] invalid (${(err as Error).message}); skipping`);
+      }
+    }
+
     for (const e of state.botEntities) {
+      if (claimed.has(e.entityId)) continue;
       // Config takes precedence: build a multiProfileBot spawner
       // deterministically from (options.seed XOR entityId).
       if (e.config) {
@@ -179,9 +201,9 @@ export class BotOrchestrator {
         // The buyer/seller participant ids carry kind+entityId, so we
         // don't need any code-table lookups here.
         const buyerIsMe =
-          raw.buyer.kind === "bot" && raw.buyer.entityId === inst.entityId;
+          raw.buyer.kind === "bot" && inst.entityIds.includes(raw.buyer.entityId);
         const sellerIsMe =
-          raw.seller.kind === "bot" && raw.seller.entityId === inst.entityId;
+          raw.seller.kind === "bot" && inst.entityIds.includes(raw.seller.entityId);
         if (buyerIsMe) {
           this.dispatchTo(inst, () =>
             inst.strategy.onMyFill?.(inst.context, t, "buy"),
@@ -303,6 +325,7 @@ export class BotOrchestrator {
   ): void {
     const inst: BotInstance = {
       entityId,
+      entityIds: [entityId],
       strategy,
       params,
       local: new Map(),
@@ -316,13 +339,51 @@ export class BotOrchestrator {
     this.refreshContext(inst);
   }
 
+  private instantiateGroup(g: import("./api").BotGroupConfig): void {
+    if (g.entityIds.length === 0) throw new Error("group has no entityIds");
+    const state = this.session.getEngineState();
+    const inst: BotInstance = {
+      entityId: g.groupId,
+      entityIds: g.entityIds.slice(),
+      strategy: g.strategy,
+      params: g.params ?? Object.freeze({}),
+      local: new Map(),
+      timers: new Set(),
+      errorCount: 0,
+      context: undefined as unknown as BotContext,
+      lastPhase: state.phase,
+      bookFingerprints: this.computeBookFingerprints(),
+      routingRng: makeRng(g.seed ?? deriveSeed(0, g.groupId)),
+    };
+    this.instances.set(g.groupId, inst);
+    this.refreshContext(inst);
+  }
+
+  /** Pick the entityId an action should route through. Standalone:
+   *  the only id. Group: a uniform-random choice from `entityIds`,
+   *  consuming the instance's seeded routing RNG. */
+  private pickRoutingEntity(inst: BotInstance): string {
+    if (inst.entityIds.length === 1 || !inst.routingRng) return inst.entityIds[0]!;
+    const i = unsafeUniformIntDistribution(0, inst.entityIds.length - 1, inst.routingRng);
+    return inst.entityIds[i]!;
+  }
+
   private refreshContext(inst: BotInstance): void {
-    const snapshot = this.buildSnapshotFor(inst.entityId);
+    const state = this.session.getEngineState();
+    // Snapshot is built against the first entity (snapshot.myCode is
+    // the primary). myCodes carries the full set so multi-code
+    // strategies can self-identify orders under any of them.
+    const primaryEntity = inst.entityIds[0]!;
+    const snapshot = this.buildSnapshotFor(primaryEntity);
+    const myCodes = inst.entityIds.map(
+      (eid) => state.codeBook[participantKey({ kind: "bot", entityId: eid })] ?? eid,
+    );
     const ctx: BotContext = {
       entityId: inst.entityId,
       tableId: this.session.tableId as TableId,
       snapshot,
-      myCode: snapshot.myCode,
+      myCode: myCodes[0]!,
+      myCodes,
       params: inst.params,
 
       placeLimit: (args: PlaceArgs) => this.actionPlace(inst, args, /* ioc */ false),
@@ -331,12 +392,16 @@ export class BotOrchestrator {
       cancelAllMy: () => this.actionCancelAll(inst),
 
       myPosition: (cid: ContractId) =>
-        getPosition(this.session.getEngineState(), this.botParticipant(inst.entityId), cid),
+        inst.entityIds.reduce((s, eid) =>
+          s + getPosition(this.session.getEngineState(), this.botParticipant(eid), cid), 0),
       myCash: () =>
-        getCash(this.session.getEngineState(), this.botParticipant(inst.entityId)),
+        inst.entityIds.reduce((s, eid) =>
+          s + getCash(this.session.getEngineState(), this.botParticipant(eid)), 0),
       myMtmPnl: () =>
-        mtmPnl(this.session.getEngineState(), this.botParticipant(inst.entityId)),
-      myOpenOrders: () => this.collectMyOpenOrders(inst.entityId),
+        inst.entityIds.reduce((s, eid) =>
+          s + mtmPnl(this.session.getEngineState(), this.botParticipant(eid)), 0),
+      myOpenOrders: () =>
+        inst.entityIds.flatMap((eid) => this.collectMyOpenOrders(eid)),
 
       local: inst.local,
       setTimer: (ms, fn) => {
@@ -366,7 +431,8 @@ export class BotOrchestrator {
     args: PlaceArgs,
     ioc: boolean,
   ): OpResult<{ orderId: OrderId | null; fills: BotTrade[] }> {
-    const r = this.session.submitBotIntent(inst.entityId, {
+    const routed = this.pickRoutingEntity(inst);
+    const r = this.session.submitBotIntent(routed, {
       type: ioc ? "PLACE_IOC" : "PLACE_LIMIT",
       contractId: args.contractId,
       side: args.side,
@@ -379,18 +445,23 @@ export class BotOrchestrator {
     return { ok: true, value: { orderId: r.value.orderId, fills } };
   }
 
+  /** Cancel doesn't need routing — every order carries its owning
+   *  entity, and `cancelOrder` finds it in any of the bot's books.
+   *  We try each owned entity in order; first hit wins. */
   private actionCancel(inst: BotInstance, orderId: OrderId): OpResult<void> {
-    const r = this.session.submitBotIntent(inst.entityId, {
-      type: "CANCEL_ORDER",
-      orderId,
-    });
-    if (!r.ok) return { ok: false, reason: r.reason };
-    return { ok: true } as OpResult<void>;
+    for (const eid of inst.entityIds) {
+      const r = this.session.submitBotIntent(eid, { type: "CANCEL_ORDER", orderId });
+      if (r.ok) return { ok: true } as OpResult<void>;
+    }
+    return { ok: false, reason: "order not found or not yours" };
   }
 
   private actionCancelAll(inst: BotInstance): OpResult<{ cancelled: number }> {
-    const r = this.session.cancelAllForBot(inst.entityId);
-    return { ok: true, value: r.value };
+    let total = 0;
+    for (const eid of inst.entityIds) {
+      total += this.session.cancelAllForBot(eid).value.cancelled;
+    }
+    return { ok: true, value: { cancelled: total } };
   }
 
   // -------------------------------------------------------------------

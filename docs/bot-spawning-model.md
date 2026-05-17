@@ -124,21 +124,39 @@ will be wired later — see §6 / §8.
 
 ## 6. Multi-code routing
 
-A bot can own multiple codes — `codes: ["AB", "CD", "EF"]` — and each
-order is placed under a code sampled per `routing`. This makes the
-bot's behavior harder to fingerprint (no single code shows the full
-pattern).
+A bot can own multiple codes — orders are routed across them
+uniformly so observers can't easily fingerprint the bot's activity.
 
-**Implementation status: deferred.** Currently `1 entity = 1 code`
-(see `server/MockerySession.ts` `onSetupSetBotEntities`). The engine
-keys positions, cash, and codes by `participantKey({ kind: "bot",
-entityId })`, so extending to many codes per entity needs:
+**Approach (landed).** No engine changes. Each code stays a normal
+`BotEntity` (the engine sees N independent traders). The orchestrator
+ties them together via a `BotGroupConfig`:
 
-- Engine: allow a bot entity to register a code set; route orders by
-  the code field rather than synthesising from `entityId`.
-- Orchestrator: at `actionPlace`, sample a code from the bot's set and
-  pass it in the intent.
-- Snapshot: the bot sees its aggregate position across its codes.
+```ts
+new BotOrchestrator(session, clock, strategies, {
+  groups: [{
+    groupId: "MyBot",
+    entityIds: ["AA", "BB", "CC"],   // pre-registered via SETUP_SET_BOT_ENTITIES
+    strategy: myStrategy,
+    seed: 42,                         // routing-RNG seed (deterministic)
+  }],
+});
+```
+
+The orchestrator instantiates ONE `BotStrategy` per group. Its
+`BotContext` exposes:
+
+- `myCode` — the primary (first) code.
+- `myCodes: readonly ParticipantCode[]` — all codes the bot routes
+  through. Strategies that care about "is any code mine?" should
+  test `myCodes.includes(code)`.
+- `placeLimit` / `placeIoc` route via a uniform pick from
+  `entityIds` per call (seeded RNG → replayable).
+- `myPosition` / `myCash` / `myMtmPnl` / `myOpenOrders` aggregate
+  across the group's entityIds.
+- `onMyFill` fires for fills against any of the group's entities.
+
+`cancel(orderId)` searches the group's entities in order; first hit
+wins. `cancelAllMy` cancels across all of them.
 
 ## 7. Per-strategy docs are the source of truth
 
@@ -170,4 +188,4 @@ test fixtures and any saved games will need migration.
 | `drawProfiles(BotConfigSpec, rng)` programmatic API | landed |
 | Wire-format `WireBotConfigSpec` + `resolveWireSpec`/`drawProfilesFromWire` | landed |
 | Session integration: `SETUP_SET_BOT_CONFIG` + orchestrator auto-spawner-build | landed |
-| Multi-code routing (engine + orchestrator) | **next** |
+| Multi-code routing via `BotGroupConfig` (orchestrator-side) | landed |
