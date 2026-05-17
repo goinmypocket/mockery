@@ -66,7 +66,9 @@ interface NaturalParamsOverride {
 function defaultParams(over: NaturalParamsOverride = {}) {
   return {
     targetQty: 5, tightSpreadFrac: 0.5, widthInitTicks: 3,
-    historicMedianGuard: 1.5, urgencyDecayPerSec: 0,
+    // Absolute tick cap. Set high so tests that exercise pennying
+    // aren't immediately budget-breached.
+    historicMedianGuard: 100, urgencyDecayPerSec: 0,
     idleSecondsBeforeDecay: 1.0, urgentPennyIntervalMs: 1000,
     panicThreshold: 1.5, panicEmaHalfLifeSec: 5,
     ...over,

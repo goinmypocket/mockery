@@ -91,6 +91,15 @@ export interface BotStrategy<P = Params> {
    *  parameters can omit this and ignore `ctx.params`. */
   readonly paramsSchema?: ParamsSchema;
 
+  /** Default `WireStrategySpec` (minus `strategyId`) the host UI
+   *  pre-populates when a host opens the spawner configurator for
+   *  this strategy. Strategies that don't support multi-profile
+   *  spawning can omit. See `docs/bot-spawning-model.md` §5. */
+  readonly defaultProfileDistributions?: Omit<
+    import("./config").WireStrategySpec,
+    "strategyId"
+  >;
+
   // Lifecycle hooks. All optional; the orchestrator no-ops missing
   // hooks. `ctx` is freshly refreshed before every hook fires.
 

@@ -192,3 +192,5 @@ test fixtures and any saved games will need migration.
 | `BotGroupConfig.config` (group hosts a multiProfileBot spawner) | landed |
 | `SETUP_SET_BOT_GROUP` / `SETUP_REMOVE_BOT_GROUP` wire surface | landed |
 | Per-strategy docs in `docs/bots/` | landed |
+| `BotStrategy.defaultProfileDistributions` + UI spawner modal | landed |
+| User-overridden defaults persisted in browser localStorage | landed |

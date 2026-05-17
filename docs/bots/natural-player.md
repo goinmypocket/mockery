@@ -96,9 +96,9 @@ not on the strategy itself. Everything else is a strategy param.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `targetQty` | int (non-zero, signed) | 5 | Signed target. Positive → buy, negative → sell. |
-| `tightSpreadFrac` | number ≥ 0 | 0.5 | Phase 1 sweep threshold (multiplier on BAS-q25). Spread is "tight" if ≤ `frac × BAS_q25`, floored at 1 tick. Values > 1 widen the sweep envelope (more aggressive); < 1 narrows it. |
+| `tightSpreadFrac` | number ≥ 0 | 1 | Phase 1 sweep threshold (multiplier on BAS-q25). Spread is "tight" if ≤ `frac × BAS_q25`, floored at 1 tick. Values > 1 widen the sweep envelope (more aggressive); < 1 narrows it. |
 | `widthInitTicks` | int ≥ 1 | 3 | Phase 2 width budget at spawn, in ticks. |
-| `historicMedianGuard` | number ≥ 0 | 1.5 | Caps the width budget at `historicMedianGuard × historic median BAS / tickSize`. Keeps the budget grounded in market conditions. |
+| `historicMedianGuard` | number ≥ 0 | 8 | **Absolute** cap on the width budget, in ticks. (Was a multiplier on the historic median BAS; now an absolute tick ceiling — the historic-median framing is baked into the default `Distribution` rather than computed dynamically.) |
 | `urgencyDecayPerSec` | number ≥ 0 | 0.05 | Linear shrink rate of the width budget per second of no contract action. |
 | `idleSecondsBeforeDecay` | number ≥ 0 | 1.0 | Seconds of inactivity before urgency decay kicks in. |
 | `urgentPennyIntervalMs` | int ≥ 100 | 1000 | Repenny cadence once urgent. |
@@ -111,6 +111,30 @@ Profile-level (set on the `Profile` passed to `multiProfileBot`):
 |---|---|
 | `lagMs` | Action lag in ms — consumed via `subCtx.afterLag` on every place / cancel chain. |
 | `scope` | `"instance"` or `"shared"`. Natural-player currently uses per-instance accounting regardless of `scope`; the field is reserved for strategies that want to gate on `ctx.myPosition()` instead. |
+
+## Default profile distributions
+
+Used by the host setup UI when configuring a multi-profile spawner
+for this strategy (`BotStrategy.defaultProfileDistributions`).
+The host can override per-game in the modal; saved overrides
+persist in browser localStorage.
+
+| Field | Default distribution |
+|---|---|
+| `count` (per ProfileSpec) | `uniform-int(1, 5)` |
+| `spawn.mode` | `poisson` |
+| `spawn.ratePerSec` | `uniform(0.01, 0.1)` |
+| `lagMs` | `uniform-int(1000, 3000)` |
+| `scope` | `instance` |
+| `targetQty` | `uniform-int(1, 5)` |
+| `tightSpreadFrac` | `uniform(1, 2)` |
+| `widthInitTicks` | `uniform-int(1, 5)` |
+| `historicMedianGuard` | `uniform(5, 10)` |
+| `urgencyDecayPerSec` | `uniform(0, 0.4)` |
+| `idleSecondsBeforeDecay` | `uniform(4, 10)` |
+| `urgentPennyIntervalMs` | `categorical({1000, 2000, 3000})` |
+| `panicThreshold` | `gaussian(μ=5, σ=3, bounds=[0, 10])` |
+| `panicEmaHalfLifeSec` | `uniform(10, 60)` |
 
 ## Helpers used
 

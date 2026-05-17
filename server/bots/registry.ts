@@ -33,6 +33,8 @@ export interface StrategyInfo {
   readonly tags: readonly string[];
   readonly category: string | null;
   readonly paramsSchema: BotStrategy<unknown>["paramsSchema"] | null;
+  readonly defaultProfileDistributions:
+    BotStrategy<unknown>["defaultProfileDistributions"] | null;
 }
 
 export function listStrategies(): readonly StrategyInfo[] {
@@ -43,6 +45,7 @@ export function listStrategies(): readonly StrategyInfo[] {
     tags: s.tags ?? [],
     category: s.category ?? null,
     paramsSchema: s.paramsSchema ?? null,
+    defaultProfileDistributions: s.defaultProfileDistributions ?? null,
   }));
 }
 

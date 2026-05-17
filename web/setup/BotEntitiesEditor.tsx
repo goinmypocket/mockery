@@ -6,6 +6,8 @@
 import { useState, type ReactNode } from "react";
 import type { ProjectedSnapshot } from "../../engine/project";
 import { listStrategies } from "../../server/bots/registry";
+import type { WireStrategySpec } from "../../server/bots/config";
+import { BotSpawnerEditor } from "./BotSpawnerEditor";
 
 interface Props {
   readonly snapshot: ProjectedSnapshot;
@@ -14,9 +16,11 @@ interface Props {
 
 export function BotEntitiesEditor({ snapshot, send }: Props): ReactNode {
   const [draftId, setDraftId] = useState("");
+  const [spawnerFor, setSpawnerFor] = useState<string | null>(null);
   const strategies = listStrategies();
   const entities = snapshot.botEntities;
   const ids = entities.map((e) => e.entityId);
+  const strategyById = new Map(strategies.map((s) => [s.id, s]));
 
   const submit = (): void => {
     const next = ids.includes(draftId.toUpperCase())
@@ -38,7 +42,7 @@ export function BotEntitiesEditor({ snapshot, send }: Props): ReactNode {
       ) : (
         <table className="mk-table">
           <thead>
-            <tr><th>Entity</th><th>Strategy</th><th></th></tr>
+            <tr><th>Entity</th><th>Strategy</th><th></th><th></th></tr>
           </thead>
           <tbody>
             {entities.map((e) => (
@@ -61,6 +65,14 @@ export function BotEntitiesEditor({ snapshot, send }: Props): ReactNode {
                 </td>
                 <td>
                   <button
+                    type="button" className="mk-button mk-button--small"
+                    title="Configure as multi-profile spawner (overrides strategy binding)"
+                    onClick={() => setSpawnerFor(e.entityId)}
+                    disabled={!e.strategyId || !strategyById.get(e.strategyId)?.defaultProfileDistributions}
+                  >Configure…</button>
+                </td>
+                <td>
+                  <button
                     type="button" className="mk-button mk-button--small mk-button--danger"
                     onClick={() => remove(e.entityId)}
                   >×</button>
@@ -70,6 +82,23 @@ export function BotEntitiesEditor({ snapshot, send }: Props): ReactNode {
           </tbody>
         </table>
       )}
+
+      {spawnerFor !== null && (() => {
+        const entity = entities.find((e) => e.entityId === spawnerFor);
+        const strat = entity?.strategyId ? strategyById.get(entity.strategyId) : undefined;
+        if (!entity || !strat) { setSpawnerFor(null); return null; }
+        const currentConfig = (entity.config as { strategies?: WireStrategySpec[] } | null | undefined)
+          ?.strategies?.[0] ?? null;
+        return (
+          <BotSpawnerEditor
+            entityId={entity.entityId}
+            strategy={strat}
+            initial={currentConfig}
+            send={send}
+            onClose={() => setSpawnerFor(null)}
+          />
+        );
+      })()}
 
       <div className="mk-bots__add">
         <input
