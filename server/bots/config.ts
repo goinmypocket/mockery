@@ -35,6 +35,32 @@ export interface BotConfigSpec {
   readonly strategies: readonly StrategySpec[];
 }
 
+/** JSON-friendly form: same shape but references a strategy by id
+ *  instead of holding the object. Used by wire / save formats. */
+export interface WireStrategySpec extends Omit<StrategySpec, "strategy"> {
+  readonly strategyId: string;
+}
+
+export interface WireBotConfigSpec {
+  readonly strategies: readonly WireStrategySpec[];
+}
+
+/** Resolve a wire spec against a registry. Throws if any `strategyId`
+ *  isn't found. */
+export function resolveWireSpec(
+  wire: WireBotConfigSpec,
+  registry: Readonly<Record<string, BotStrategy>>,
+): BotConfigSpec {
+  return {
+    strategies: wire.strategies.map((ws) => {
+      const strategy = registry[ws.strategyId];
+      if (!strategy) throw new Error(`unknown strategyId "${ws.strategyId}"`);
+      const { strategyId: _id, ...rest } = ws;
+      return { ...rest, strategy };
+    }),
+  };
+}
+
 /** Draw a concrete Profile[] from a BotConfigSpec. Each StrategySpec
  *  contributes `sample(count)` profiles; per-profile params, lag, and
  *  spawn-rate are drawn independently. Profile IDs are
@@ -61,4 +87,13 @@ export function drawProfiles(spec: BotConfigSpec, rng: Rng): Profile[] {
     }
   }
   return out;
+}
+
+/** Convenience: resolve a wire spec then draw. */
+export function drawProfilesFromWire(
+  wire: WireBotConfigSpec,
+  registry: Readonly<Record<string, BotStrategy>>,
+  rng: Rng,
+): Profile[] {
+  return drawProfiles(resolveWireSpec(wire, registry), rng);
 }

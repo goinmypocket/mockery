@@ -5,7 +5,10 @@
 // =============================================================================
 
 import { describe, expect, it } from "vitest";
-import { drawProfiles, type BotConfigSpec } from "../server/bots/config";
+import {
+  drawProfiles, drawProfilesFromWire, resolveWireSpec,
+  type BotConfigSpec, type WireBotConfigSpec,
+} from "../server/bots/config";
 import { multiProfileBot } from "../server/bots/spawning";
 import { BotOrchestrator } from "../server/bots/runtime";
 import { MockerySession } from "../server/MockerySession";
@@ -162,5 +165,41 @@ describe("drawProfiles", () => {
     const botKey = participantKey({ kind: "bot", entityId: "XY" });
     const pos = s.getEngineState().positions[botKey]?.[cid] ?? 0;
     expect([6, 7, 8]).toContain(pos);
+  });
+});
+
+describe("WireBotConfigSpec / resolveWireSpec", () => {
+  const wire: WireBotConfigSpec = {
+    strategies: [{
+      strategyId: "noop-cfg",
+      count: { kind: "constant", value: 2 },
+      spawn: { mode: "permanent" },
+      lagMs: { kind: "constant", value: 0 },
+      scope: "instance",
+      params: {},
+    }],
+  };
+
+  it("resolves strategyId via registry", () => {
+    const resolved = resolveWireSpec(wire, { "noop-cfg": noop });
+    expect(resolved.strategies[0]!.strategy).toBe(noop);
+  });
+
+  it("throws on unknown strategyId", () => {
+    expect(() => resolveWireSpec(wire, {})).toThrow(/unknown strategyId/);
+  });
+
+  it("drawProfilesFromWire mirrors drawProfiles(resolved, ...)", () => {
+    const a = drawProfilesFromWire(wire, { "noop-cfg": noop }, makeRng(1));
+    const b = drawProfiles(resolveWireSpec(wire, { "noop-cfg": noop }), makeRng(1));
+    expect(a).toEqual(b);
+  });
+
+  it("WireBotConfigSpec round-trips through JSON.stringify", () => {
+    const json = JSON.stringify(wire);
+    const back = JSON.parse(json) as WireBotConfigSpec;
+    expect(back).toEqual(wire);
+    // and still draws.
+    expect(drawProfilesFromWire(back, { "noop-cfg": noop }, makeRng(1))).toHaveLength(2);
   });
 });

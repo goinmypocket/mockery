@@ -168,5 +168,6 @@ test fixtures and any saved games will need migration.
 | `BotContext.setTimer` callback receives fresh ctx | landed |
 | Per-instance fill attribution (`Trade.restingOrderId`) | landed |
 | `drawProfiles(BotConfigSpec, rng)` programmatic API | landed |
+| Wire-format `WireBotConfigSpec` + `resolveWireSpec`/`drawProfilesFromWire` | landed |
 | Multi-code routing (engine + orchestrator) | **next** |
-| Host wire-protocol surface for `BotConfigSpec` (`SETUP_SET_BOT_CONFIG`) | next |
+| Session integration: `SETUP_SET_BOT_CONFIG` + auto-spawner-build | next |
