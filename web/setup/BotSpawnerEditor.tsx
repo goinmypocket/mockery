@@ -101,7 +101,7 @@ export function BotSpawnerEditor({
 
   return (
     <div className="mk-modal">
-      <div className="mk-modal__panel" style={{ minWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
+      <div className="mk-modal__panel mk-spawner">
         <h3>Configure spawner — entity {entityId} ({strategy.displayName})</h3>
         <p className="mk-muted">
           Distributions drawn once at game start to produce concrete profiles.
@@ -129,7 +129,7 @@ export function BotSpawnerEditor({
 
         {paramKeys.length > 0 && (
           <>
-            <h4 style={{ marginTop: 16, marginBottom: 4 }}>Strategy params</h4>
+            <h4 className="mk-spawner__heading">Strategy params</h4>
             {paramKeys.map((k) => (
               <DistField key={k} label={k}
                 value={spec.params[k] ?? { kind: "constant", value: 0 }}
@@ -179,7 +179,7 @@ function SpawnField({
         <option value="poisson">poisson (arrivals over time)</option>
       </select>
       {value.mode === "poisson" && (
-        <div style={{ marginTop: 8 }}>
+        <div className="mk-spawner__sub">
           <DistField label="ratePerSec" value={value.ratePerSec}
             onChange={(d) => onChange({ mode: "poisson", ratePerSec: d })} />
         </div>
@@ -209,7 +209,7 @@ function DistField({
   return (
     <div className="mk-field">
       <span>{label}</span>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="mk-spawner__dist-row">
         <select value={value.kind} onChange={(e) => setKind(e.target.value as Kind)}>
           {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
         </select>
@@ -266,7 +266,7 @@ function NumField({
 }: { label: string; value: number; onChange(n: number): void; optional?: boolean }): ReactNode {
   const displayed = Number.isFinite(value) ? String(value) : "";
   return (
-    <label style={{ display: "inline-flex", flexDirection: "column", fontSize: "0.85em", color: "var(--mk-muted)" }}>
+    <label className="mk-spawner__num">
       {label}
       <input
         type="number" step="any" value={displayed}
@@ -275,7 +275,6 @@ function NumField({
           const v = e.target.value;
           onChange(v === "" ? NaN : Number(v));
         }}
-        style={{ width: 80 }}
       />
     </label>
   );
@@ -289,9 +288,9 @@ function CategoricalEditor({
 }): ReactNode {
   const set = (choices: typeof value.choices): void => onChange({ kind: "categorical", choices });
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div className="mk-spawner__cat">
       {value.choices.map((c, i) => (
-        <div key={i} style={{ display: "flex", gap: 4 }}>
+        <div key={i} className="mk-spawner__cat-row">
           <NumField label="value" value={c.value}
             onChange={(v) => set(value.choices.map((x, j) => j === i ? { ...x, value: v } : x))} />
           <NumField label="weight" value={c.weight}

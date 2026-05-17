@@ -1,55 +1,143 @@
 /* =============================================================================
-   Mockery global styles. Single dark theme. Naming convention: `mk-*`.
-   v0.1; will be overhauled when rc-dock is integrated.
+   Mockery global styles. Class prefix: `mk-*`.
+
+   Theming: every color is a CSS variable defined under `:root` (dark
+   defaults) with light-mode overrides in a single
+   `@media (prefers-color-scheme: light)` block. Combined with
+   `color-scheme: light dark` in reset.css, the UI tracks the OS
+   preference end-to-end — including native form controls.
    ============================================================================= */
 
 :root {
+  /* Surfaces */
   --mk-bg: #0e1116;
   --mk-panel: #161b22;
   --mk-panel-2: #1f242c;
+  --mk-input-bg: #1f242c;
   --mk-border: #30363d;
-  --mk-text: #ffffff;
+  --mk-cell-hover: rgba(255, 255, 255, 0.06);
+
+  /* Text */
   /* --mk-muted is brighter than the canonical github-dim grey so every
    * "secondary" label still clears WCAG AA on --mk-panel-2 (contrast
-   * ratio ≥ 4.5:1). Originally #8b949e; bumping to #c0c7d1 takes us
-   * from ~3.8:1 to ~7.2:1 against the darker panel surface, which is
-   * the worst-case background for muted text in this theme. */
+   * ratio ≥ 4.5:1). */
+  --mk-text: #ffffff;
   --mk-muted: #c0c7d1;
+
+  /* Semantic colors */
   --mk-bid: #79c0ff;
   --mk-offer: #ff7b72;
   --mk-pos: #ffffff;
   --mk-neg: #ff7b72;
   --mk-accent: #f0883e;
+  --mk-accent-hover: #f59e4a;
+  --mk-on-accent: #11140d;
   --mk-success: #56d364;
   --mk-warn: #d29922;
   --mk-danger: #e07070;
+
+  /* Danger button / chip */
+  --mk-danger-bg: #5a1f1f;
+  --mk-danger-border: #7a2f2f;
+  --mk-danger-text: #ffaaaa;
+  --mk-danger-hover: #7a2f2f;
+
+  /* Buttons */
+  --mk-button-bg: #1f242c;
+  --mk-button-hover: #283038;
+
+  /* Overlays */
+  --mk-modal-overlay: rgba(0, 0, 0, 0.6);
+  --mk-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  /* Per-phase TnS tints, each over the dark base. */
+  --mk-phase-0: #161b22;
+  --mk-phase-1: #1a2030;
+  --mk-phase-2: #1c2520;
+  --mk-phase-3: #251c20;
+  --mk-phase-4: #1f1c25;
+  --mk-phase-5: #25201c;
+
+  /* Tag tints used by .mk-seats__role badges. */
+  --mk-tint-informed-bg: rgba(86, 211, 100, 0.15);
+  --mk-tint-muted-bg: rgba(139, 148, 158, 0.15);
 }
 
-/* Belt-and-braces: anything inside the mockery app inherits explicit
- * text color so an un-styled <div> / <span> / <p> can never end up
- * black-on-black. Form controls were already pinned in reset.css
- * (color-scheme: dark + explicit bg/color) but this guards every
- * other element kind. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --mk-bg: #ffffff;
+    --mk-panel: #ffffff;
+    --mk-panel-2: #f6f8fa;
+    --mk-input-bg: #ffffff;
+    --mk-border: #d0d7de;
+    --mk-cell-hover: rgba(0, 0, 0, 0.04);
+
+    --mk-text: #1f2328;
+    --mk-muted: #57606a;
+
+    --mk-bid: #0969da;
+    --mk-offer: #cf222e;
+    --mk-pos: #1a7f37;
+    --mk-neg: #cf222e;
+    --mk-accent: #bc4c00;
+    --mk-accent-hover: #a04000;
+    --mk-on-accent: #ffffff;
+    --mk-success: #1a7f37;
+    --mk-warn: #9a6700;
+    --mk-danger: #cf222e;
+
+    --mk-danger-bg: #ffebe9;
+    --mk-danger-border: #ffcecb;
+    --mk-danger-text: #82071e;
+    --mk-danger-hover: #ffcecb;
+
+    --mk-button-bg: #f6f8fa;
+    --mk-button-hover: #eaeef2;
+
+    --mk-modal-overlay: rgba(15, 17, 22, 0.4);
+    --mk-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+
+    --mk-phase-0: #ffffff;
+    --mk-phase-1: #eef4ff;
+    --mk-phase-2: #ecf7ee;
+    --mk-phase-3: #fdecec;
+    --mk-phase-4: #f3ecfa;
+    --mk-phase-5: #fbf3e8;
+
+    --mk-tint-informed-bg: rgba(31, 136, 61, 0.12);
+    --mk-tint-muted-bg: rgba(87, 96, 106, 0.10);
+  }
+}
+
+/* Belt-and-braces: every top-level surface inherits explicit text color
+ * so an un-styled descendant can never end up with text matching its
+ * background. */
 .mk-playing, .mk-setup, .mk-loading, .mk-workspace, .dock-layout {
   color: var(--mk-text);
 }
 
 /* ------ buttons ------ */
 .mk-button {
-  background: var(--mk-panel-2);
+  background: var(--mk-button-bg);
   color: var(--mk-text);
   border: 1px solid var(--mk-border);
   padding: 6px 12px;
   border-radius: 4px;
 }
-.mk-button:hover { background: #283038; }
+.mk-button:hover { background: var(--mk-button-hover); }
 .mk-button:disabled { opacity: 0.5; cursor: not-allowed; }
-.mk-button--primary { background: var(--mk-accent); border-color: var(--mk-accent); color: #11140d; font-weight: 600; }
-.mk-button--primary:hover { background: #f59e4a; }
+.mk-button--primary {
+  background: var(--mk-accent); border-color: var(--mk-accent);
+  color: var(--mk-on-accent); font-weight: 600;
+}
+.mk-button--primary:hover { background: var(--mk-accent-hover); }
 .mk-button--large { padding: 10px 18px; font-size: 1.05em; }
 .mk-button--small { padding: 2px 8px; font-size: 0.9em; }
-.mk-button--danger { background: #5a1f1f; border-color: #7a2f2f; color: #ffaaaa; }
-.mk-button--danger:hover { background: #7a2f2f; }
+.mk-button--danger {
+  background: var(--mk-danger-bg); border-color: var(--mk-danger-border);
+  color: var(--mk-danger-text);
+}
+.mk-button--danger:hover { background: var(--mk-danger-hover); }
 
 /* ------ general atoms ------ */
 .mk-muted { color: var(--mk-muted); font-size: 0.9em; }
@@ -68,7 +156,7 @@
 .mk-field { display: block; margin-bottom: 12px; }
 .mk-field span { display: block; color: var(--mk-muted); font-size: 0.9em; margin-bottom: 4px; }
 .mk-field input, .mk-field textarea {
-  width: 100%; background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  width: 100%; background: var(--mk-input-bg); border: 1px solid var(--mk-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
@@ -77,10 +165,11 @@
 /* ------ rejection chip ------ */
 .mk-rejection {
   display: inline-flex; align-items: center; gap: 8px;
-  background: #5a1f1f; color: #ffaaaa; border: 1px solid #7a2f2f;
+  background: var(--mk-danger-bg); color: var(--mk-danger-text);
+  border: 1px solid var(--mk-danger-border);
   padding: 6px 12px; border-radius: 999px; font-size: 0.9em;
 }
-.mk-rejection:hover { background: #7a2f2f; }
+.mk-rejection:hover { background: var(--mk-danger-hover); }
 
 /* ------ loading ------ */
 .mk-loading { display: grid; place-items: center; height: 100%; color: var(--mk-muted); }
@@ -115,7 +204,7 @@
 .mk-options__row input[type="number"],
 .mk-options__row input[type="text"],
 .mk-options__row select {
-  background: var(--mk-bg); color: var(--mk-text);
+  background: var(--mk-input-bg); color: var(--mk-text);
   border: 1px solid var(--mk-border); border-radius: 4px;
   padding: 6px 8px; font: inherit;
 }
@@ -145,7 +234,7 @@
 /* ------ modal ------ */
 .mk-modal {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--mk-modal-overlay);
   display: grid; place-items: center;
   z-index: 100;
 }
@@ -153,6 +242,7 @@
   background: var(--mk-panel); color: var(--mk-text);
   border: 1px solid var(--mk-border);
   border-radius: 8px; padding: 20px; max-width: 600px; width: 90%;
+  box-shadow: var(--mk-shadow);
 }
 .mk-modal__panel h3 { margin-top: 0; }
 .mk-modal__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
@@ -173,16 +263,31 @@
 /* ------ bots editor ------ */
 .mk-bots__add { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
 .mk-bots__add input {
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px; width: 80px;
   text-transform: uppercase; font-family: ui-monospace, monospace;
 }
+
+/* ------ bot spawner modal ------ */
+.mk-spawner { min-width: 520px; max-height: 90vh; overflow-y: auto; }
+.mk-spawner__heading { margin-top: 16px; margin-bottom: 4px; }
+.mk-spawner__sub { margin-top: 8px; }
+.mk-spawner__dist-row {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.mk-spawner__num {
+  display: inline-flex; flex-direction: column;
+  font-size: 0.85em; color: var(--mk-muted);
+}
+.mk-spawner__num input { width: 80px; }
+.mk-spawner__cat { display: flex; flex-direction: column; gap: 4px; }
+.mk-spawner__cat-row { display: flex; gap: 4px; }
 
 /* ------ codes editor ------ */
 .mk-codes__topline { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
 .mk-codes__topline p { margin: 0; }
 .mk-code-input {
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
   color: var(--mk-text); padding: 4px 6px; border-radius: 4px; width: 50px;
   font-family: ui-monospace, monospace; text-align: center;
 }
@@ -216,9 +321,9 @@
   border-bottom: 1px solid var(--mk-border);
 }
 .mk-workspace__dock { flex: 1; position: relative; }
-/* Dark-tint rc-dock to match Mockery's palette without importing
-   rc-dock-dark.css globally. The dark sheet is also imported at
-   the entry point; these overrides smooth out remaining mismatches. */
+/* Tint rc-dock to match Mockery's palette via CSS variables — the
+ * appropriate rc-dock theme sheet (base / dark) is loaded on demand
+ * by PlatformApp based on prefers-color-scheme. */
 .dock-layout { background: var(--mk-bg); color: var(--mk-text); }
 .dock-panel { background: var(--mk-panel); border: 1px solid var(--mk-border); }
 .dock-bar { background: var(--mk-panel-2); border-bottom: 1px solid var(--mk-border); }
@@ -253,7 +358,7 @@
   background: var(--mk-panel); color: var(--mk-text);
   border: 1px solid var(--mk-border);
   border-radius: 6px; padding: 4px; min-width: 220px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--mk-shadow);
 }
 .mk-menu__item {
   display: block; width: 100%; text-align: left;
@@ -322,8 +427,16 @@
   font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em;
   padding: 2px 6px; border-radius: 3px; min-width: 86px; text-align: center;
 }
-.mk-seats__role--informed { background: rgba(86, 211, 100, 0.15); color: var(--mk-success); border: 1px solid var(--mk-success); }
-.mk-seats__role--uninformed { background: rgba(139, 148, 158, 0.15); color: var(--mk-muted); border: 1px solid var(--mk-border); }
+.mk-seats__role--informed {
+  background: var(--mk-tint-informed-bg);
+  color: var(--mk-success);
+  border: 1px solid var(--mk-success);
+}
+.mk-seats__role--uninformed {
+  background: var(--mk-tint-muted-bg);
+  color: var(--mk-muted);
+  border: 1px solid var(--mk-border);
+}
 .mk-seats__name { flex: 1; }
 .mk-seats__code { font-family: ui-monospace, monospace; color: var(--mk-muted); }
 .mk-seats__actions { display: flex; gap: 4px; }
@@ -388,7 +501,7 @@
 }
 .mk-book__depth {
   width: 32px; padding: 1px 2px; text-align: center;
-  background: var(--mk-bg); color: var(--mk-text);
+  background: var(--mk-input-bg); color: var(--mk-text);
   border: 1px solid var(--mk-border); border-radius: 3px;
   font: inherit; font-size: 0.85em;
 }
@@ -398,7 +511,7 @@
   color: var(--mk-accent); font-weight: 700;
 }
 .mk-book__cell { cursor: pointer; padding: 3px 4px !important; }
-.mk-book__cell:hover { background: rgba(255,255,255,0.05); border-radius: 3px; }
+.mk-book__cell:hover { background: var(--mk-cell-hover); border-radius: 3px; }
 
 /* Contract cell sits between bid and offer with NO extra padding so the
    prices nestle right up to the contract pill. */
@@ -408,12 +521,12 @@
   padding: 2px 8px; border-radius: 4px; font-weight: 600; cursor: pointer;
   font: inherit; white-space: nowrap;
 }
-.mk-book__contract:hover { background: #283038; }
+.mk-book__contract:hover { background: var(--mk-button-hover); }
 
 .mk-book__qty-cell { width: 36px; padding: 2px 2px !important; }
 .mk-book__action-cell { width: 38px; padding: 2px 2px !important; }
 .mk-book__qty {
-  width: 32px; background: var(--mk-bg); border: 1px solid var(--mk-border);
+  width: 32px; background: var(--mk-input-bg); border: 1px solid var(--mk-border);
   color: var(--mk-text); padding: 2px 2px; border-radius: 3px; text-align: center;
   font-family: ui-monospace, monospace; font-size: inherit;
 }
@@ -424,7 +537,7 @@
   border: 1px solid var(--mk-border); padding: 2px 6px; border-radius: 3px;
   font-size: 0.9em; cursor: pointer;
 }
-.mk-book__hit:hover:not(:disabled) { background: #283038; }
+.mk-book__hit:hover:not(:disabled) { background: var(--mk-button-hover); }
 .mk-book__hit:disabled { opacity: 0.4; cursor: not-allowed; }
 .mk-book__cancel-mine {
   background: transparent; color: var(--mk-danger);
@@ -439,7 +552,7 @@
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .mk-placer select, .mk-placer input {
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
@@ -452,7 +565,7 @@
 /* ------ tns ------ */
 .mk-tns__filters { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
 .mk-tns__filters select {
-  background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
   color: var(--mk-text); padding: 4px 8px; border-radius: 4px;
 }
 .mk-tns__row td { padding: 4px 10px; font-size: 0.9em; }
@@ -500,15 +613,15 @@
   font-weight: 900; text-decoration: underline;
   text-decoration-thickness: 2px; text-underline-offset: 3px;
 }
-/* Phase-coloured backgrounds. Distinct, dim enough not to fight text.
- * Each row pins color: var(--mk-text) so the white-on-dark contrast
- * holds regardless of which phase tint is in use. */
-.mk-phase-0 { background: #161b22; color: var(--mk-text); }
-.mk-phase-1 { background: #1a2030; color: var(--mk-text); }
-.mk-phase-2 { background: #1c2520; color: var(--mk-text); }
-.mk-phase-3 { background: #251c20; color: var(--mk-text); }
-.mk-phase-4 { background: #1f1c25; color: var(--mk-text); }
-.mk-phase-5 { background: #25201c; color: var(--mk-text); }
+/* Phase-coloured backgrounds. Distinct, dim enough not to fight text;
+ * each row pins color: var(--mk-text) so contrast holds in either
+ * theme regardless of which phase tint is in use. */
+.mk-phase-0 { background: var(--mk-phase-0); color: var(--mk-text); }
+.mk-phase-1 { background: var(--mk-phase-1); color: var(--mk-text); }
+.mk-phase-2 { background: var(--mk-phase-2); color: var(--mk-text); }
+.mk-phase-3 { background: var(--mk-phase-3); color: var(--mk-text); }
+.mk-phase-4 { background: var(--mk-phase-4); color: var(--mk-text); }
+.mk-phase-5 { background: var(--mk-phase-5); color: var(--mk-text); }
 /* Per-contract left-edge accent, on top of the phase background. */
 .mk-contract-0 td:first-child { box-shadow: inset 4px 0 0 #4f9eff; }
 .mk-contract-1 td:first-child { box-shadow: inset 4px 0 0 #ff7b54; }
@@ -521,10 +634,12 @@
 .mk-host { display: flex; flex-direction: column; gap: 12px; }
 .mk-host__auto, .mk-host__manual { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .mk-host__delay-input, .mk-host__grace-input {
-  width: 80px; background: var(--mk-panel-2); border: 1px solid var(--mk-border);
+  width: 80px; background: var(--mk-input-bg); border: 1px solid var(--mk-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
-.mk-host__end { display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--mk-panel-2); color: var(--mk-text); border-radius: 4px; }
+.mk-host__end {
+  display: flex; flex-direction: column; gap: 8px; padding: 8px;
+  background: var(--mk-panel-2); color: var(--mk-text); border-radius: 4px;
+}
 .mk-host__grace-row { display: flex; gap: 6px; align-items: center; }
-

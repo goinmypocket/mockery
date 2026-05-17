@@ -1,19 +1,25 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
-:root { color-scheme: dark; }
+
+/* `light dark` tells the user agent we support both, so native form
+ * controls, scrollbars, and other UA chrome track the user's OS
+ * preference. The CSS variables in app.css flip in lockstep via
+ * `@media (prefers-color-scheme: light)`. */
+:root { color-scheme: light dark; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: #0e1116;
-  color: #e6e6e6;
+  background: var(--mk-bg);
+  color: var(--mk-text);
 }
-/* Form controls don't reliably inherit text color (especially the
- * native dropdown that appears for <select>), so pin them explicitly
- * to the dark palette so we never end up with black-on-black or
- * invisible text. */
+
+/* Form controls don't reliably inherit text color, so pin them to the
+ * theme variables. With `color-scheme: light dark` declared above, the
+ * UA-drawn parts of the native dropdown popup will also track theme. */
 button, input, select, textarea, optgroup, option {
   font: inherit;
-  background-color: #1f242c;
-  color: #e6e6e6;
+  background-color: var(--mk-input-bg);
+  color: var(--mk-text);
 }
 button { cursor: pointer; }
 table { border-collapse: collapse; width: 100%; }

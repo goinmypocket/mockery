@@ -8,13 +8,18 @@
 // PnL stay visible in the same dock the players were trading in.
 // =============================================================================
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { PlatformGameContext } from "./types";
 import { useMockerySession } from "./useMockerySession";
 import { SetupScreen } from "./screens/SetupScreen";
 import { PlayingScreen } from "./screens/PlayingScreen";
 
-import "rc-dock/dist/rc-dock-dark.css";
+// rc-dock ships separate light/dark sheets. Import them as URLs and
+// inject as media-gated <link>s below so the browser activates only
+// the one matching the user's prefers-color-scheme.
+import rcDockLightUrl from "rc-dock/dist/rc-dock.css?url";
+import rcDockDarkUrl from "rc-dock/dist/rc-dock-dark.css?url";
+
 import "./styles/reset.css";
 import "./styles/app.css";
 
@@ -25,6 +30,7 @@ interface Props {
 }
 
 export default function PlatformApp({ ctx }: Props): ReactNode {
+  useRcDockThemedStylesheet();
   const session = useMockerySession(ctx);
 
   if (!session.snapshot) {
@@ -65,4 +71,24 @@ export default function PlatformApp({ ctx }: Props): ReactNode {
       clearRejection={session.clearRejection}
     />
   );
+}
+
+/** Mount both rc-dock stylesheets, each gated to its color-scheme via
+ *  the `media` attribute — the browser activates only the matching
+ *  one and re-evaluates automatically when the user flips theme. */
+function useRcDockThemedStylesheet(): void {
+  useEffect(() => {
+    const make = (href: string, media: string): HTMLLinkElement => {
+      const el = document.createElement("link");
+      el.rel = "stylesheet";
+      el.href = href;
+      el.media = media;
+      el.dataset["mkRcDock"] = "1";
+      document.head.appendChild(el);
+      return el;
+    };
+    const light = make(rcDockLightUrl, "(prefers-color-scheme: light)");
+    const dark = make(rcDockDarkUrl, "(prefers-color-scheme: dark)");
+    return () => { light.remove(); dark.remove(); };
+  }, []);
 }
