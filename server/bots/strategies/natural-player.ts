@@ -47,7 +47,7 @@ const naturalPlayer: BotStrategy = {
   // subCtx.afterLag); it is intentionally not a strategy param.
   paramsSchema: {
     targetQty: { kind: "int", default: 5, label: "Target qty (signed; >0 buy, <0 sell)" },
-    tightSpreadFrac: { kind: "number", default: 0.5, min: 0, max: 1 },
+    tightSpreadFrac: { kind: "number", default: 0.5, min: 0 },
     widthInitTicks: { kind: "int", default: 3, min: 1 },
     historicMedianGuard: { kind: "number", default: 1.5, min: 0 },
     urgencyDecayPerSec: { kind: "number", default: 0.05, min: 0 },

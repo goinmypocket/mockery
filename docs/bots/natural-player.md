@@ -96,7 +96,7 @@ not on the strategy itself. Everything else is a strategy param.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `targetQty` | int (non-zero, signed) | 5 | Signed target. Positive → buy, negative → sell. |
-| `tightSpreadFrac` | number ∈ (0, 1] | 0.5 | Phase 1 sweep threshold: spread is "tight" if ≤ `frac × BAS_q25`, floored at 1 tick. |
+| `tightSpreadFrac` | number ≥ 0 | 0.5 | Phase 1 sweep threshold (multiplier on BAS-q25). Spread is "tight" if ≤ `frac × BAS_q25`, floored at 1 tick. Values > 1 widen the sweep envelope (more aggressive); < 1 narrows it. |
 | `widthInitTicks` | int ≥ 1 | 3 | Phase 2 width budget at spawn, in ticks. |
 | `historicMedianGuard` | number ≥ 0 | 1.5 | Caps the width budget at `historicMedianGuard × historic median BAS / tickSize`. Keeps the budget grounded in market conditions. |
 | `urgencyDecayPerSec` | number ≥ 0 | 0.05 | Linear shrink rate of the width budget per second of no contract action. |
