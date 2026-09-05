@@ -5,7 +5,7 @@
 
 import { useState, type ReactNode } from "react";
 import type { ProjectedSnapshot } from "../../engine/project";
-import { listStrategies } from "../../server/bots/registry";
+import { listStrategies } from "../../shared/botStrategies";
 import type { WireStrategySpec } from "../../server/bots/config";
 import { BotSpawnerEditor } from "./BotSpawnerEditor";
 

@@ -13,6 +13,7 @@
 //   - onEvent → cancel quotes at the information boundary.
 // =============================================================================
 
+import { RANDOM_QUOTER_METADATA } from "../../../shared/botStrategies";
 import type { BotContext, BotStrategy } from "../api";
 import {
   cadence,
@@ -34,34 +35,7 @@ type QuoterParams = Readonly<{
 }>;
 
 const randomQuoter: BotStrategy<QuoterParams> = {
-  id: "random-quoter",
-  displayName: "Random quoter (fixed spread)",
-  description:
-    "Quotes a symmetric two-sided spread around mid (falling back to last trade, then the configured fallback) on every contract. Requotes on a timer and cancels at every information event.",
-  tags: ["market-maker", "noise", "template"],
-  category: "market-maker",
-  paramsSchema: {
-    spread: {
-      kind: "int", min: 1, max: 50, default: 2,
-      label: "Spread (half-width)",
-      description: "Distance from mid to each quoted price.",
-    },
-    size: {
-      kind: "int", min: 1, max: 100, default: 1,
-      label: "Quote size",
-      description: "Quantity placed at each side per requote.",
-    },
-    requoteMs: {
-      kind: "int", min: 250, max: 60000, default: 5000,
-      label: "Requote interval (ms)",
-      description: "Cadence between full requotes.",
-    },
-    fallbackMid: {
-      kind: "int", min: 1, max: 100, default: 25,
-      label: "Fallback mid",
-      description: "Used when neither book mid nor last trade exist.",
-    },
-  },
+  ...RANDOM_QUOTER_METADATA,
 
   onStart(ctx) {
     cadence(ctx, ctx.params.requoteMs, () => requote(ctx));

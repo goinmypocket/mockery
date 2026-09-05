@@ -3,11 +3,11 @@
 // default strategy for unbound bot entities.
 // =============================================================================
 
+import { NOOP_METADATA } from "../../../shared/botStrategies";
 import type { BotStrategy } from "../api";
 
 const noop: BotStrategy = {
-  id: "noop",
-  displayName: "No-op (does nothing)",
+  ...NOOP_METADATA,
 };
 
 export default noop;

@@ -14,7 +14,7 @@ import type {
 import type {
   WireBotConfigSpec, WireStrategySpec,
 } from "../../server/bots/config";
-import type { StrategyInfo } from "../../server/bots/registry";
+import type { StrategyInfo } from "../../shared/botStrategies";
 
 interface Props {
   readonly entityId: string;
