@@ -198,6 +198,7 @@ interface SavedLevel {
 }
 
 export interface SessionConstructorArgs {
+  readonly scopeId?: string;
   readonly tableId: TableId;
   readonly hostUserId: UserId;
   readonly options: ResolvedOptions;
@@ -211,6 +212,7 @@ export interface SessionConstructorArgs {
 export function createFromOpts(opts: CreateOpts): MockerySession {
   return new MockerySession({
     tableId: opts.tableId,
+    scopeId: opts.scopeId ?? opts.tableId,
     hostUserId: opts.hostUserId,
     options: readResolved(opts.options),
   });
@@ -219,6 +221,7 @@ export function createFromOpts(opts: CreateOpts): MockerySession {
 export function loadFromOpts(blob: MockerySave, opts: LoadOpts): MockerySession {
   const s = new MockerySession({
     tableId: opts.tableId,
+    scopeId: opts.scopeId ?? opts.tableId,
     hostUserId: blob.hostUserId,
     options: blob.options,
   });
@@ -261,9 +264,11 @@ export class MockerySession implements GameSession<MockerySave> {
    *  rather than at session construction so tests that don't touch the
    *  library don't pay the SQLite cost. */
   private libraryImpl: ContractLibrary | null;
+  private readonly scopeId: string;
 
   constructor(args: SessionConstructorArgs) {
     this.tableId = args.tableId;
+    this.scopeId = args.scopeId ?? args.tableId;
     this.clock = args.clock ?? realClock;
     this.libraryImpl = args.library ?? null;
     // Always allocate MAX_SEAT_COUNT slots so the platform's lobby UI
@@ -282,7 +287,7 @@ export class MockerySession implements GameSession<MockerySave> {
   }
 
   private library(): ContractLibrary {
-    if (!this.libraryImpl) this.libraryImpl = getLibrary();
+    if (!this.libraryImpl) this.libraryImpl = getLibrary().forScope!(this.scopeId);
     return this.libraryImpl;
   }
 

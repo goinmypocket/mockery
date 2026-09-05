@@ -16,6 +16,7 @@ export interface GameDefinition<Save = unknown> {
   readonly optionsSchema: OptionsSchema;
   createSession(opts: CreateOpts): GameSession<Save>;
   loadSession(blob: Save, opts: LoadOpts): GameSession<Save>;
+  savedParticipants?(blob: Save): readonly { seatIndex: number; userId: UserId; displayName: string }[];
   normalizeOptions?(options: Record<string, unknown>): Record<string, unknown>;
 }
 
@@ -32,6 +33,8 @@ export interface GameSession<Save = unknown> {
 }
 
 export interface CreateOpts {
+  /** Stable table family for auxiliary participant-owned data. */
+  readonly scopeId?: string;
   readonly tableId: TableId;
   readonly hostUserId: UserId;
   readonly options: Record<string, unknown>;

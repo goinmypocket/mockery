@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { MockerySession, type MockerySave } from "../server/MockerySession";
 import { FakeClock } from "../server/clock";
+import { def } from "../definition";
 import { asTableId, asUserId } from "../shared/ids";
 import type { ResolvedOptions } from "../shared/types";
 
@@ -14,6 +15,16 @@ const HOST = asUserId("host-uid");
 const ALICE = asUserId("alice-uid");
 const BOB = asUserId("bob-uid");
 const CAROL = asUserId("carol-uid");
+
+it("exposes exact saved participant IDs for table access migration", () => {
+  const session = new MockerySession({ tableId: asTableId("table"), hostUserId: HOST, options: makeOpts(), clock: new FakeClock() });
+  session.claimSeat(ALICE, 0, { displayName: "Same name" });
+  session.claimSeat(BOB, 1, { displayName: "Same name" });
+  expect(def.savedParticipants!(session.serialize())).toEqual([
+    { seatIndex: 0, userId: ALICE, displayName: "Same name" },
+    { seatIndex: 1, userId: BOB, displayName: "Same name" },
+  ]);
+});
 
 function makeOpts(overrides: Partial<ResolvedOptions> = {}): ResolvedOptions {
   return {

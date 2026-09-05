@@ -35,6 +35,9 @@ export const def: GameDefinition<MockerySave> = {
   normalizeOptions(options) {
     return normalizeMockeryOptions(options);
   },
+  savedParticipants(blob) {
+    return blob.seats.flatMap((userId, seatIndex) => userId ? [{ seatIndex, userId, displayName: blob.seatDisplayNames[seatIndex] ?? "Player" }] : []);
+  },
   createSession(opts) {
     return createFromOpts(opts);
   },

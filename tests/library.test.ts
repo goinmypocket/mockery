@@ -56,6 +56,20 @@ describe("library DB layer", () => {
     expect(lib.list(ALICE)).toHaveLength(1);
   });
 
+  it("copies legacy entries once and isolates future changes by table scope", () => {
+    lib.save(ALICE, { name: "Legacy", description: "", payoffSource: "return 1;" });
+    const a = lib.forScope!("table-a"), b = lib.forScope!("table-b");
+    const entryA = a.list(ALICE)[0]!, entryB = b.list(ALICE)[0]!;
+    expect(entryA.name).toBe("Legacy"); expect(entryB.name).toBe("Legacy");
+    expect(b.update(ALICE, entryA.id, { name: "stolen" })).toBeNull();
+    expect(b.remove(ALICE, entryA.id)).toBe(false);
+    a.update(ALICE, entryA.id, { name: "Only A" });
+    expect(b.list(ALICE)[0]!.name).toBe("Legacy");
+    a.remove(ALICE, entryA.id);
+    expect(lib.forScope!("table-a").list(ALICE)).toEqual([]);
+    expect(lib.list(ALICE)[0]!.name).toBe("Legacy");
+  });
+
   it("update mutates only that entry, returns updated row, bumps updated_at", () => {
     const entry = lib.save(ALICE, { name: "Sum", description: "old", payoffSource: "return 1;" });
     const before = entry.updatedAt;

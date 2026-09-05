@@ -30,6 +30,7 @@ export interface LibraryEntry {
 }
 
 export interface ContractLibrary {
+  forScope?(scope: string): ContractLibrary;
   list(userId: UserId): readonly LibraryEntry[];
   save(userId: UserId, args: { name: string; description: string; payoffSource: string }): LibraryEntry;
   update(userId: UserId, id: number, args: { name?: string; description?: string; payoffSource?: string }): LibraryEntry | null;
@@ -54,6 +55,24 @@ export function getLibrary(opts?: { forceMemory?: boolean }): ContractLibrary {
   db.exec(SCHEMA);
 
   const lib: ContractLibrary = {
+    forScope(scope) {
+      const owner = (id: UserId): UserId => {
+        const key = JSON.stringify([scope, id]) as UserId;
+        // Copy historical templates once into each table that already holds
+        // this opaque participant ID. Future edits stay within that table.
+        db.transaction(() => {
+          const created = db.prepare("INSERT OR IGNORE INTO library_scope_imports (owner) VALUES (?)").run(key);
+          if (created.changes) db.prepare(`INSERT INTO mockery_user_contract_library (user_id, name, description, payoff_source, created_at, updated_at) SELECT ?, name, description, payoff_source, created_at, updated_at FROM mockery_user_contract_library WHERE user_id = ?`).run(key, id);
+        })();
+        return key;
+      };
+      return {
+        list(id) { return lib.list(owner(id)).map(e => ({ ...e, userId: id })); },
+        save(id, args) { return { ...lib.save(owner(id), args), userId: id }; },
+        update(id, entry, args) { const result = lib.update(owner(id), entry, args); return result && { ...result, userId: id }; },
+        remove(id, entry) { return lib.remove(owner(id), entry); },
+      };
+    },
     list(userId) {
       const rows = db
         .prepare(`
@@ -148,6 +167,7 @@ export function closeLibrary(): void {
 }
 
 const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS library_scope_imports (owner TEXT PRIMARY KEY);
   CREATE TABLE IF NOT EXISTS mockery_user_contract_library (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
