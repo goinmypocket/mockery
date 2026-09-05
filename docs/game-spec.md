@@ -683,8 +683,11 @@ Generation defaults:
   (a-z stripped of non-alpha characters, padded with `X` if shorter
   than 2). For a bot, the entityId is **required** to be exactly
   two letters and is used verbatim. Collisions are resolved by
-  bumping the second letter (`AB → AC → AD …`) and surfacing a
-  warning.
+  advancing to the next unused pair (`AB → AC → AD …`, wrapping
+  `ZZ → AA`). This also applies to players with matching names or
+  initials, so automatic guest names never block starting a table.
+  Assigned codes remain visible and editable in setup; manually entered
+  collisions are still rejected. Existing saved code books are unchanged.
 - `codeMode === "random"` — codes are drawn from the alphabet via
   the seeded RNG. Each participant gets a unique pair. With
   `enforceCaseByRole === true`, the case follows role; otherwise

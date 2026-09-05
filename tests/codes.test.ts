@@ -36,15 +36,20 @@ describe("codes.generateCodeBook (alpha)", () => {
     expect(book[participantKey(ps[1]!.id)]).toBe("bo");
   });
 
-  it("throws on player code collision", () => {
+  it("assigns the next free code when player initials collide", () => {
     const ps = [p("Alex", true), p("Alice", true)];   // both want AL
-    expect(() =>
-      generateCodeBook(ps, {
-        mode: "alpha",
-        enforceCaseByRole: false,
-        rng: makeRng(1),
-      }),
-    ).toThrow(/duplicate code/);
+    const book = generateCodeBook(ps, { mode: "alpha", enforceCaseByRole: false, rng: makeRng(1) });
+    expect(Object.values(book)).toEqual(["AL", "AM"]);
+  });
+
+  it("supports identical guest names and wraps codes while preserving role case", () => {
+    const ps = Array.from({ length: 8 }, (_, i) => ({
+      ...p(`user-${i}`, i < 2), displayName: "ZZ Guest",
+    }));
+    const options = { mode: "alpha" as const, enforceCaseByRole: true, rng: makeRng(1) };
+    const book = generateCodeBook(ps, options);
+    expect(Object.values(book)).toEqual(["ZZ", "AA", "ab", "ac", "ad", "ae", "af", "ag"]);
+    expect(generateCodeBook(ps, { ...options, rng: makeRng(1) })).toEqual(book);
   });
 
   it("bumps bot codes when they collide", () => {

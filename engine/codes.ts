@@ -39,8 +39,8 @@ export interface GenerateOptions {
  *  alpha mode: derive codes from displayName initials.
  *  random mode: deterministic shuffle of all 2-letter pairs.
  *
- *  Player collisions throw. Bots (which can outnumber distinct
- *  initials) advance to the next free code instead.
+ *  Initials are only a preference: players (including guests with identical
+ *  names) and bots advance to the next free code on collision.
  */
 export function generateCodeBook(
   participants: readonly ParticipantInfo[],
@@ -71,10 +71,7 @@ export function generateCodeBook(
   for (const p of participants) {
     let code = applyCase(initialsFromName(p.displayName), p, opts.enforceCaseByRole);
     if (used.has(code.toLowerCase())) {
-      if (p.id.kind === "player") {
-        throw new Error(`duplicate code ${code} for ${p.displayName}`);
-      }
-      code = nextAvailable(used, p, opts.enforceCaseByRole);
+      code = nextAvailable(used, p, opts.enforceCaseByRole, code);
     }
     out[participantKey(p.id)] = code;
     used.add(code.toLowerCase());
@@ -138,12 +135,15 @@ function nextAvailable(
   used: Set<string>,
   p: ParticipantInfo,
   enforceCaseByRole: boolean,
+  preferred: string,
 ): string {
-  for (const a of ALPHABET) {
-    for (const b of ALPHABET) {
-      const code = applyCase(a + b, p, enforceCaseByRole);
-      if (!used.has(code.toLowerCase())) return code;
-    }
+  const upper = preferred.toUpperCase();
+  const start = ALPHABET.indexOf(upper[0]!) * ALPHABET.length + ALPHABET.indexOf(upper[1]!);
+  for (let offset = 1; offset <= MAX_CODES; offset++) {
+    const index = (start + offset) % MAX_CODES;
+    const raw = ALPHABET[Math.floor(index / ALPHABET.length)]! + ALPHABET[index % ALPHABET.length]!;
+    const code = applyCase(raw, p, enforceCaseByRole);
+    if (!used.has(code.toLowerCase())) return code;
   }
   throw new Error("no available 2-letter code");
 }
