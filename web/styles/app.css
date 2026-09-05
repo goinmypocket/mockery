@@ -1,20 +1,21 @@
 /* =============================================================================
-   Mockery global styles. Class prefix: `mk-*`.
+   Mockery styles. Class prefix: `mk-*`.
 
-   Theming: every color is a CSS variable defined under `:root` (dark
+   Theming: every color is a CSS variable defined under `.mk-game` (dark
    defaults) with light-mode overrides in a single
    `@media (prefers-color-scheme: light)` block. Combined with
    `color-scheme: light dark` in reset.css, the UI tracks the OS
    preference end-to-end — including native form controls.
    ============================================================================= */
 
-:root {
+.mk-game {
   /* Surfaces */
   --mk-bg: #0e1116;
   --mk-panel: #161b22;
   --mk-panel-2: #1f242c;
   --mk-input-bg: #1f242c;
   --mk-border: #30363d;
+  --mk-control-border: #768390;
   --mk-cell-hover: rgba(255, 255, 255, 0.06);
 
   /* Text */
@@ -64,26 +65,27 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  .mk-game {
     --mk-bg: #ffffff;
     --mk-panel: #ffffff;
     --mk-panel-2: #f6f8fa;
     --mk-input-bg: #ffffff;
     --mk-border: #d0d7de;
+    --mk-control-border: #7a838d;
     --mk-cell-hover: rgba(0, 0, 0, 0.04);
 
     --mk-text: #1f2328;
     --mk-muted: #57606a;
 
-    --mk-bid: #0969da;
+    --mk-bid: #075dbf;
     --mk-offer: #cf222e;
-    --mk-pos: #1a7f37;
+    --mk-pos: #176b30;
     --mk-neg: #cf222e;
     --mk-accent: #bc4c00;
     --mk-accent-hover: #a04000;
     --mk-on-accent: #ffffff;
-    --mk-success: #1a7f37;
-    --mk-warn: #9a6700;
+    --mk-success: #176b30;
+    --mk-warn: #805500;
     --mk-danger: #cf222e;
 
     --mk-danger-bg: #ffebe9;
@@ -112,7 +114,7 @@
 /* Belt-and-braces: every top-level surface inherits explicit text color
  * so an un-styled descendant can never end up with text matching its
  * background. */
-.mk-playing, .mk-setup, .mk-loading, .mk-workspace, .dock-layout {
+.mk-playing, .mk-setup, .mk-loading, .mk-workspace, .mk-game .dock-layout {
   color: var(--mk-text);
 }
 
@@ -120,7 +122,7 @@
 .mk-button {
   background: var(--mk-button-bg);
   color: var(--mk-text);
-  border: 1px solid var(--mk-border);
+  border: 1px solid var(--mk-control-border);
   padding: 6px 12px;
   border-radius: 4px;
 }
@@ -156,7 +158,7 @@
 .mk-field { display: block; margin-bottom: 12px; }
 .mk-field span { display: block; color: var(--mk-muted); font-size: 0.9em; margin-bottom: 4px; }
 .mk-field input, .mk-field textarea {
-  width: 100%; background: var(--mk-input-bg); border: 1px solid var(--mk-border);
+  width: 100%; background: var(--mk-input-bg); border: 1px solid var(--mk-control-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
@@ -175,7 +177,7 @@
 .mk-loading { display: grid; place-items: center; height: 100%; color: var(--mk-muted); }
 
 /* ------ setup screen ------ */
-.mk-setup { max-width: 1100px; margin: 0 auto; padding: 24px 32px; }
+.mk-setup { max-width: 1100px; margin: 0 auto; padding: 24px 32px; background: var(--mk-bg); }
 .mk-setup__header { margin-bottom: 24px; }
 .mk-setup__header h1 { margin: 0 0 4px 0; font-size: 1.5em; }
 .mk-setup__subtitle { color: var(--mk-muted); margin: 0; }
@@ -205,7 +207,7 @@
 .mk-options__row input[type="text"],
 .mk-options__row select {
   background: var(--mk-input-bg); color: var(--mk-text);
-  border: 1px solid var(--mk-border); border-radius: 4px;
+  border: 1px solid var(--mk-control-border); border-radius: 4px;
   padding: 6px 8px; font: inherit;
 }
 .mk-options__wide { flex: 1 1 100%; }
@@ -263,7 +265,7 @@
 /* ------ bots editor ------ */
 .mk-bots__add { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
 .mk-bots__add input {
-  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-control-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px; width: 80px;
   text-transform: uppercase; font-family: ui-monospace, monospace;
 }
@@ -287,7 +289,7 @@
 .mk-codes__topline { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
 .mk-codes__topline p { margin: 0; }
 .mk-code-input {
-  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-control-border);
   color: var(--mk-text); padding: 4px 6px; border-radius: 4px; width: 50px;
   font-family: ui-monospace, monospace; text-align: center;
 }
@@ -324,12 +326,12 @@
 /* Tint rc-dock to match Mockery's palette via CSS variables — the
  * appropriate rc-dock theme sheet (base / dark) is loaded on demand
  * by PlatformApp based on prefers-color-scheme. */
-.dock-layout { background: var(--mk-bg); color: var(--mk-text); }
-.dock-panel { background: var(--mk-panel); border: 1px solid var(--mk-border); }
-.dock-bar { background: var(--mk-panel-2); border-bottom: 1px solid var(--mk-border); }
-.dock-tab { color: var(--mk-muted); }
-.dock-tab.dock-tab-active { color: var(--mk-text); border-bottom-color: var(--mk-accent); }
-.dock-divider { background: var(--mk-border); }
+.mk-game .dock-layout { background: var(--mk-bg); color: var(--mk-text); }
+.mk-game .dock-panel { background: var(--mk-panel); border: 1px solid var(--mk-border); }
+.mk-game .dock-bar { background: var(--mk-panel-2); border-bottom: 1px solid var(--mk-border); }
+.mk-game .dock-tab { color: var(--mk-muted); }
+.mk-game .dock-tab.dock-tab-active { color: var(--mk-text); border-bottom-color: var(--mk-accent); }
+.mk-game .dock-divider { background: var(--mk-border); }
 .mk-module {
   height: 100%; overflow: hidden; box-sizing: border-box;
   display: flex; flex-direction: column;
@@ -552,7 +554,7 @@
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .mk-placer select, .mk-placer input {
-  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-control-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
@@ -565,7 +567,7 @@
 /* ------ tns ------ */
 .mk-tns__filters { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
 .mk-tns__filters select {
-  background: var(--mk-input-bg); border: 1px solid var(--mk-border);
+  background: var(--mk-input-bg); border: 1px solid var(--mk-control-border);
   color: var(--mk-text); padding: 4px 8px; border-radius: 4px;
 }
 .mk-tns__row td { padding: 4px 10px; font-size: 0.9em; }
@@ -634,7 +636,7 @@
 .mk-host { display: flex; flex-direction: column; gap: 12px; }
 .mk-host__auto, .mk-host__manual { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .mk-host__delay-input, .mk-host__grace-input {
-  width: 80px; background: var(--mk-input-bg); border: 1px solid var(--mk-border);
+  width: 80px; background: var(--mk-input-bg); border: 1px solid var(--mk-control-border);
   color: var(--mk-text); padding: 6px 8px; border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
@@ -643,3 +645,15 @@
   background: var(--mk-panel-2); color: var(--mk-text); border-radius: 4px;
 }
 .mk-host__grace-row { display: flex; gap: 6px; align-items: center; }
+
+/* Controls need a stronger edge than decorative panel separators. */
+.mk-game :where(input, select, textarea),
+.mk-game :where(.mk-module__zoom, .mk-topbar__zoom-btn) {
+  border-color: var(--mk-control-border);
+}
+
+@media (max-width: 40rem) {
+  .mk-setup { padding: 16px; }
+  .mk-contracts { grid-template-columns: 1fr; }
+  .mk-setup__footer, .mk-mode-picker, .mk-identity__radios { flex-wrap: wrap; }
+}

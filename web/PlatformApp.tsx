@@ -30,6 +30,10 @@ interface Props {
 }
 
 export default function PlatformApp({ ctx }: Props): ReactNode {
+  return <div className="mk-game"><GameContent ctx={ctx} /></div>;
+}
+
+function GameContent({ ctx }: Props): ReactNode {
   useRcDockThemedStylesheet();
   const session = useMockerySession(ctx);
 
